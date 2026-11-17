@@ -1,0 +1,87 @@
+{
+ "totalJobs": 944,
+ "byService": {
+  "SEA Export": 228,
+  "Air Export": 18,
+  "SEA Import": 465,
+  "AIR Import": 233
+ },
+ "byStatus": {
+  "Booking": 8,
+  "Completed": 845,
+  "In Progress": 91
+ },
+ "byStatusDetail": {
+  "Booking": 8,
+  "Completed": 845,
+  "Control": 79,
+  "Waiting": 12
+ },
+ "statusRawVariants": [
+  "Job Booking",
+  "Job Booking Request",
+  "Job Complete",
+  "Job Control",
+  "Job Waiting"
+ ],
+ "missing": {
+  "etd": 33,
+  "declarationNo": 53,
+  "missingJobNoIn0409": 17
+ },
+ "dateFailures": {},
+ "rejectedRows": 17,
+ "rejectsSample": [],
+ "duplicateJobNumbers": {
+  "SHSI26070014": 2,
+  "SHSI26070047": 2,
+  "SHAI26070021": 2,
+  "SHAI26070032": 2,
+  "SHAI26080009": 2,
+  "SHSI26080070": 2,
+  "SHSI26080101": 3,
+  "SHAI26080039": 2,
+  "SHAI26080043": 2,
+  "SHAI26090026": 2,
+  "SI26090015": 2,
+  "SHAI26100038": 2,
+  "SHSI26090016": 2,
+  "SHSE26070010": 2,
+  "SHSE26070021": 2,
+  "SHSE26070025": 2,
+  "SHSE26070026": 2,
+  "SHSE26070029": 2,
+  "SE26080005": 2,
+  "SHSE26080025": 2,
+  "SHSE26080043": 2,
+  "SHSE26080055": 2,
+  "SHSE26090015": 2,
+  "SHSE26090024": 2,
+  "SHSE26090040": 3,
+  "SHSE26090041": 2,
+  "SHSE26090051": 2,
+  "SHSE26100013": 2,
+  "SHSE26100017": 3,
+  "SHSE26100024": 2,
+  "SHAE26100003": 2
+ },
+ "transportRows": 623,
+ "containerBuckets": {
+  "LCL โกดัง": 323,
+  "40'": 67,
+  "อื่น ๆ": 20,
+  "20'": 81,
+  "40' HC": 132
+ },
+ "mismatchedServicePrefix": [
+  "SHSI260700102",
+  "SHAI2606070060",
+  "SHSI260100003",
+  "SHSI26010009",
+  "SHSI2100039",
+  "SI262070001",
+  "SE260080005",
+  "SE260800008",
+  "SHAE26090055"
+ ]
+}

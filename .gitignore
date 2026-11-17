@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js Build & Cache
+.next/
+out/
+build/
+dist/
+
+# Environment & Credentials (NEVER COMMIT)
+.env
+.env*.local
+.env.development
+.env.production
+cookies.txt
+
+# Logs & Temporary Files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+data/tmp/
+*.tmp*
+
+# TypeScript
+*.tsbuildinfo
+
+# Local Database Files
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# Backups & Snapshots
+backups/*.xlsx
+backups/snapshots/*.xlsx
+backups/*.json
+!backups/snapshots/manifest.json
+
+# Large Master Excel Files
+*.xlsx
+*.xls
+data/*.xlsx
+data/*.xls
+public/exports/*.xlsx
+!public/samples/*.xlsx
+
+# OS Files
+.DS_Store
+Thumbs.db
