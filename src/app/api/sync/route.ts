@@ -4,6 +4,7 @@ import { promisify } from "util";
 import fs from "fs";
 import path from "path";
 import { getJobs, getTransport, getQuality, getQualityAlerts, getSnapshots, ADVANCE_ROWS } from "@/lib/data-store";
+import { fetchJobsFromPostgres, fetchTransportFromPostgres } from "@/lib/db";
 
 const execFileAsync = promisify(execFile);
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export async function POST() {
       process.env.PYTHON_PATH ||
       "python";
 
-    // 1. Pull fresh data from PostgreSQL if configured
+    // 1. Pull fresh data from PostgreSQL if on a system with Python & scripts
     const localPgSync = path.resolve(process.cwd(), "scripts/sync_from_postgres.py");
     const fallbackPgSync = path.resolve(process.cwd(), "../backend/scripts/sync_from_postgres.py");
     const pgSyncScript = fs.existsSync(localPgSync) ? localPgSync : fallbackPgSync;
@@ -22,14 +23,18 @@ export async function POST() {
     if (fs.existsSync(pgSyncScript) && (process.env.PGPASSWORD || process.env.DATABASE_URL)) {
       try {
         await execFileAsync(pythonExe, [pgSyncScript]);
-        console.log("[SYNC] Pulled latest data from PostgreSQL.");
+        console.log("[SYNC] Pulled latest data via Python script.");
       } catch (pgErr) {
-        console.warn("Postgres sync warning:", pgErr);
+        console.warn("Python Postgres sync warning:", pgErr);
       }
     }
 
-    const jobs = getJobs();
-    const transport = getTransport();
+    // 2. Fetch directly from Postgres (works seamlessly on Vercel Node.js runtime)
+    const pgJobs = await fetchJobsFromPostgres();
+    const pgTransport = await fetchTransportFromPostgres();
+
+    const jobs = pgJobs && pgJobs.length > 0 ? pgJobs : getJobs();
+    const transport = pgTransport && pgTransport.length > 0 ? pgTransport : getTransport();
 
     return NextResponse.json(
       {

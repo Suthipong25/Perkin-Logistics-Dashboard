@@ -26,6 +26,11 @@ data/tmp/
 # TypeScript
 *.tsbuildinfo
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # Local Database Files
 data/*.db
 data/*.sqlite

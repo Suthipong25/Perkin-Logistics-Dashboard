@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getJobs, updateJobInMemory } from "@/lib/data-store";
+import { updateJobInPostgres } from "@/lib/db";
 
 const SHEET_COLUMN_MAP: Record<
   string,
@@ -227,6 +228,12 @@ export async function PATCH(
 
   // 5. อัปเดตข้อมูลในระบบเว็บและเพิ่มเลข version + 1
   const updated = updateJobInMemory(jobNo, {
+    ...sanitizedPatch,
+    version: currentVersion + 1,
+  });
+
+  // 6. Direct sync to Supabase PostgreSQL (functions in Node.js serverless & local)
+  await updateJobInPostgres(jobNo, {
     ...sanitizedPatch,
     version: currentVersion + 1,
   });

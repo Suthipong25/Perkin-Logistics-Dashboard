@@ -7,6 +7,7 @@ import {
   getSnapshots,
   ADVANCE_ROWS,
 } from "@/lib/data-store";
+import { fetchJobsFromPostgres, fetchTransportFromPostgres } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ type PageKey =
   | "upload"
   | "safety";
 
-export default function HomePage({
+export default async function HomePage({
   searchParams,
 }: {
   searchParams?: {
@@ -27,8 +28,11 @@ export default function HomePage({
     edit?: string;
   };
 }) {
-  const jobs = getJobs();
-  const transport = getTransport();
+  const pgJobs = await fetchJobsFromPostgres();
+  const pgTransport = await fetchTransportFromPostgres();
+
+  const jobs = pgJobs && pgJobs.length > 0 ? pgJobs : getJobs();
+  const transport = pgTransport && pgTransport.length > 0 ? pgTransport : getTransport();
   const quality = getQuality();
   const qualityAlerts = getQualityAlerts();
   const snapshots = getSnapshots();

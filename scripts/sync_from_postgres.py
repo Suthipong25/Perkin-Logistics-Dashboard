@@ -47,6 +47,7 @@ def query_postgres_json(query, host='localhost', port=5432, user='postgres', db=
         '-p', str(port),
         '-U', str(user),
         '-d', str(db),
+        '-w',
         '-t', '-A',
         '-c', query
     ]

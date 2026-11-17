@@ -38,11 +38,21 @@ def main():
         sys.exit(0)
 
     env_vars = load_env()
-    host = env_vars.get("PGHOST", "192.168.1.153")
+    db_url = env_vars.get("DATABASE_URL") or env_vars.get("DATABASE_URL_WEB") or ""
+    host = env_vars.get("PGHOST", "aws-1-ap-northeast-1.pooler.supabase.com")
     port = env_vars.get("PGPORT", "5432")
-    user = env_vars.get("PGUSER", "postgres")
-    db = env_vars.get("PGDATABASE", "Test001")
+    user = env_vars.get("PGUSER", "postgres.vdygytdzouvqwypbgqmd")
+    db = env_vars.get("PGDATABASE", "postgres")
     password = env_vars.get("PGPASSWORD", "Perkin2Logistics")
+
+    if db_url and "://" in db_url:
+        import urllib.parse
+        parsed = urllib.parse.urlparse(db_url)
+        user = parsed.username or user
+        password = parsed.password or password
+        host = parsed.hostname or host
+        port = parsed.port or port
+        db = parsed.path.lstrip("/") or db
 
     field_map = {
         "updateStatus": "update_status",
@@ -100,6 +110,7 @@ def main():
         "-p", str(port),
         "-U", user,
         "-d", db,
+        "-w",
         "-c", full_sql
     ]
 
