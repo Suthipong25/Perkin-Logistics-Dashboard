@@ -12,6 +12,50 @@ import {
 
 const DATA_DIR = path.join(process.cwd(), "data");
 
+// Bundled fallbacks for serverless environments (e.g. Vercel) where filesystem pathing may differ
+let bundledJobs: JobRecord[] | null = null;
+let bundledTransport: TransportRecord[] | null = null;
+let bundledQuality: QualityReport[] | any = null;
+let bundledQualityAlerts: QualityAlertsReport | any = null;
+let bundledSnapshots: SnapshotManifestEntry[] | null = null;
+
+try {
+  const mod = require("../../data/jobs.json");
+  bundledJobs = Array.isArray(mod) ? mod : (mod.jobs || []);
+} catch {}
+
+try {
+  const mod = require("../../data/transport.json");
+  bundledTransport = Array.isArray(mod) ? mod : (mod.rows || mod.trips || mod.transport || []);
+} catch {}
+
+try {
+  bundledQuality = require("../../data/quality.json");
+} catch {}
+
+try {
+  bundledQualityAlerts = require("../../data/quality_alerts.json");
+} catch {}
+
+try {
+  bundledSnapshots = require("../../backups/snapshots/manifest.json");
+} catch {}
+
+function getDataFilePath(filename: string): string {
+  const candidates = [
+    path.join(DATA_DIR, filename),
+    path.join(process.cwd(), "data", filename),
+    path.join(__dirname, "..", "..", "data", filename),
+    path.join(__dirname, "..", "..", "..", "data", filename),
+    path.resolve(process.cwd(), "data", filename),
+    path.resolve("data", filename),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return path.join(DATA_DIR, filename);
+}
+
 // In-memory master cache for sub-millisecond responses
 let memoryJobsCache: JobRecord[] | null = null;
 let lastJobsMtime = 0;
@@ -22,7 +66,7 @@ let isSaving = false;
 let pendingSave = false;
 
 export function getJobs(): JobRecord[] {
-  const filePath = path.join(DATA_DIR, "jobs.json");
+  const filePath = getDataFilePath("jobs.json");
   try {
     const stats = fs.statSync(filePath);
     if (memoryJobsCache && stats.mtimeMs === lastJobsMtime) {
@@ -35,7 +79,7 @@ export function getJobs(): JobRecord[] {
     lastJobsMtime = stats.mtimeMs;
     return result;
   } catch {
-    return memoryJobsCache || [];
+    return memoryJobsCache || bundledJobs || [];
   }
 }
 
@@ -120,22 +164,24 @@ export function updateJobInMemory(jobNo: string, patch: Partial<JobRecord>): Job
 }
 
 export function getTransport(): TransportRecord[] {
+  const filePath = getDataFilePath("transport.json");
   try {
-    const raw = fs.readFileSync(path.join(DATA_DIR, "transport.json"), "utf-8");
+    const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) return parsed;
-    return parsed.rows || [];
+    return parsed.rows || parsed.trips || parsed.transport || [];
   } catch {
-    return [];
+    return bundledTransport || [];
   }
 }
 
 export function getQuality(): QualityReport {
+  const filePath = getDataFilePath("quality.json");
   try {
-    const raw = fs.readFileSync(path.join(DATA_DIR, "quality.json"), "utf-8");
+    const raw = fs.readFileSync(filePath, "utf-8");
     return JSON.parse(raw);
   } catch {
-    return {
+    return bundledQuality || {
       totalJobs: 0,
       byService: {},
       byStatus: {},
@@ -152,11 +198,12 @@ export function getQuality(): QualityReport {
 }
 
 export function getQualityAlerts(): QualityAlertsReport {
+  const filePath = getDataFilePath("quality_alerts.json");
   try {
-    const raw = fs.readFileSync(path.join(DATA_DIR, "quality_alerts.json"), "utf-8");
+    const raw = fs.readFileSync(filePath, "utf-8");
     return JSON.parse(raw);
   } catch {
-    return {
+    return bundledQualityAlerts || {
       summary: { totalAlerts: 0, dateSwapsCount: 0, crossSheetDupsCount: 0, unlinkedTransportCount: 0, hiddenSheetsCount: 0 },
       dateSwaps: [],
       crossSheetDuplicates: [],
@@ -176,10 +223,10 @@ export function getSnapshots(): SnapshotManifestEntry[] {
     ].filter(Boolean) as string[];
 
     const manifestPath = candidates.find((p) => fs.existsSync(p));
-    if (!manifestPath) return [];
+    if (!manifestPath) return bundledSnapshots || [];
     return JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
   } catch {
-    return [];
+    return bundledSnapshots || [];
   }
 }
 
