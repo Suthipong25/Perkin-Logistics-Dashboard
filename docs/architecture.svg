@@ -1,0 +1,137 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="680" viewBox="0 0 1280 680" role="img" aria-label="สถาปัตยกรรมเป้าหมาย FWD SharePoint n8n PostgreSQL Next.js">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L12,6 L0,12 z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-dash" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L12,6 L0,12 z" fill="#64748B"/>
+    </marker>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#CBD5E1" opacity="0.5"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="680" fill="#F8FAFC"/>
+  <rect width="1280" height="680" fill="url(#dots)"/>
+
+  <text x="48" y="56" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="27" font-weight="700" fill="#0F172A">สถาปัตยกรรมเป้าหมาย (Target Architecture)</text>
+  <text x="48" y="84" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="14" fill="#64748B">FWD  →  SharePoint  →  n8n  →  PostgreSQL  →  Next.js Dashboard   ·   Excel เป็นรายงาน ไม่ใช่ฐานข้อมูล</text>
+
+  <!-- ===== Row 1 ===== -->
+  <!-- FWD -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="150" width="180" height="100" rx="14" fill="#EEF2F7" stroke="#334155" stroke-width="1.5"/>
+  </g>
+  <text x="130" y="188" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="17" font-weight="700" fill="#0F172A">FWD (ERP)</text>
+  <text x="130" y="211" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#475569">ระบบต้นทาง</text>
+  <text x="130" y="229" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#475569">Booking List Report</text>
+
+  <!-- SharePoint -->
+  <g filter="url(#shadow)">
+    <rect x="280" y="150" width="230" height="100" rx="14" fill="#E0F2FE" stroke="#0369A1" stroke-width="1.5"/>
+  </g>
+  <text x="395" y="188" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="17" font-weight="700" fill="#0C4A6E">SharePoint</text>
+  <text x="395" y="211" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#0C4A6E">/FWD_Raw (Landing Zone)</text>
+  <text x="395" y="229" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#0C4A6E">/Reports (ไฟล์ที่ระบบสร้าง)</text>
+
+  <!-- n8n -->
+  <g filter="url(#shadow)">
+    <rect x="570" y="150" width="210" height="100" rx="14" fill="#FFEDD5" stroke="#C2410C" stroke-width="1.5"/>
+  </g>
+  <text x="675" y="188" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="17" font-weight="700" fill="#7C2D12">n8n</text>
+  <text x="675" y="211" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#7C2D12">validate · normalize</text>
+  <text x="675" y="229" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#7C2D12">dedupe · upsert · alert</text>
+
+  <!-- PostgreSQL -->
+  <g filter="url(#shadow)">
+    <rect x="850" y="150" width="210" height="100" rx="14" fill="#DBEAFE" stroke="#1D4ED8" stroke-width="1.5"/>
+  </g>
+  <text x="955" y="188" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="17" font-weight="700" fill="#1E3A8A">PostgreSQL</text>
+  <text x="955" y="211" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#1E3A8A">System of Record</text>
+  <text x="955" y="229" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#1E3A8A">jobs · milestones · runs</text>
+
+  <!-- arrows row 1 -->
+  <line x1="222" y1="200" x2="276" y2="200" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="512" y1="200" x2="566" y2="200" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="782" y1="200" x2="846" y2="200" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <circle cx="249" cy="200" r="11" fill="#0F172A"/>
+  <text x="249" y="204" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#fff">1</text>
+  <text x="249" y="184" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="10.5" fill="#334155">Export</text>
+
+  <circle cx="539" cy="200" r="11" fill="#0F172A"/>
+  <text x="539" y="204" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#fff">2</text>
+  <text x="539" y="184" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="10.5" fill="#334155">Webhook</text>
+
+  <circle cx="814" cy="200" r="11" fill="#0F172A"/>
+  <text x="814" y="204" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#fff">3</text>
+  <text x="814" y="184" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="10.5" fill="#334155">Upsert</text>
+
+  <!-- ===== Row 2 ===== -->
+  <!-- Teams -->
+  <g filter="url(#shadow)">
+    <rect x="280" y="380" width="230" height="100" rx="14" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1.5"/>
+  </g>
+  <text x="395" y="418" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="16" font-weight="700" fill="#4C1D95">Microsoft Teams</text>
+  <text x="395" y="441" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#4C1D95">แจ้งเตือนงานเกินกำหนด</text>
+  <text x="395" y="459" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#4C1D95">และแจ้งเมื่อ ingest ล้มเหลว</text>
+
+  <!-- Excel -->
+  <g filter="url(#shadow)">
+    <rect x="570" y="380" width="210" height="100" rx="14" fill="#DCFCE7" stroke="#15803D" stroke-width="1.5"/>
+  </g>
+  <text x="675" y="418" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="16" font-weight="700" fill="#14532D">Excel รายงาน</text>
+  <text x="675" y="441" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#14532D">JOB_Daily_YYYYMMDD.xlsx</text>
+  <text x="675" y="459" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="10.5" fill="#14532D">อัปโหลด → SharePoint /Reports</text>
+
+  <!-- Next.js -->
+  <g filter="url(#shadow)">
+    <rect x="850" y="380" width="210" height="100" rx="14" fill="#F1F5F9" stroke="#0F172A" stroke-width="1.5"/>
+  </g>
+  <text x="955" y="418" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="16" font-weight="700" fill="#0F172A">Next.js Dashboard</text>
+  <text x="955" y="441" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#334155">Server Components · read-only</text>
+  <text x="955" y="459" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#334155">Login · role · audit</text>
+
+  <!-- Users -->
+  <g filter="url(#shadow)">
+    <rect x="1120" y="380" width="120" height="100" rx="14" fill="#D1FAE5" stroke="#047857" stroke-width="1.5"/>
+  </g>
+  <text x="1180" y="418" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="16" font-weight="700" fill="#064E3B">ผู้ใช้</text>
+  <text x="1180" y="441" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#064E3B">Ops · CS</text>
+  <text x="1180" y="459" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11.5" fill="#064E3B">Management</text>
+
+  <!-- arrows row 2 -->
+  <line x1="955" y1="252" x2="955" y2="376" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <circle cx="955" cy="314" r="11" fill="#0F172A"/>
+  <text x="955" y="318" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#fff">4</text>
+  <text x="975" y="318" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="10.5" fill="#334155">อ่านข้อมูล</text>
+
+  <line x1="675" y1="252" x2="675" y2="376" stroke="#64748B" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow-dash)"/>
+  <circle cx="675" cy="314" r="11" fill="#64748B"/>
+  <text x="675" y="318" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#fff">5</text>
+  <text x="695" y="318" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="10.5" fill="#334155">สร้างรายงาน</text>
+
+  <line x1="1062" y1="430" x2="1116" y2="430" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <circle cx="1089" cy="430" r="11" fill="#0F172A"/>
+  <text x="1089" y="434" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#fff">6</text>
+  <text x="1089" y="410" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11" fill="#334155">HTTPS</text>
+
+  <path d="M620 252 L620 330 L395 330 L395 376" fill="none" stroke="#64748B" stroke-width="2" stroke-dasharray="6 5" stroke-linejoin="round" marker-end="url(#arrow-dash)"/>
+  <circle cx="500" cy="330" r="11" fill="#64748B"/>
+  <text x="500" y="334" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#fff">7</text>
+  <text x="500" y="312" text-anchor="middle" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11" fill="#334155">แจ้งเตือน</text>
+
+  <!-- Footer security band -->
+  <rect x="40" y="548" width="1200" height="58" rx="14" fill="#0F172A"/>
+  <text x="64" y="573" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11" font-weight="700" fill="#93C5FD" letter-spacing="1.2">SECURITY</text>
+  <text x="64" y="593" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="12.5" fill="#E2E8F0">Internal login + role   ·   Graph Sites.Selected (least privilege)   ·   Key Vault   ·   Audit Log   ·   PDPA minimization</text>
+
+  <!-- Legend -->
+  <line x1="944" y1="650" x2="986" y2="650" stroke="#334155" stroke-width="2"/>
+  <text x="994" y="654" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11" fill="#475569">data flow</text>
+  <line x1="1070" y1="650" x2="1112" y2="650" stroke="#64748B" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="1120" y="654" font-family="'Leelawadee UI','Segoe UI',Tahoma,sans-serif" font-size="11" fill="#475569">report / alert</text>
+</svg>

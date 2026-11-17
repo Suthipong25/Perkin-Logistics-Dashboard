@@ -1,0 +1,66 @@
+{
+ "totalJobs": 989,
+ "byService": {
+  "SEA Import": 484,
+  "AIR Import": 233,
+  "Air Export": 25,
+  "SEA Export": 247
+ },
+ "byStatus": {
+  "Completed": 891,
+  "In Progress": 88,
+  "Cancelled": 10
+ },
+ "byStatusDetail": {
+  "Completed": 891,
+  "ยกเลิก Job": 2,
+  "Waiting": 12,
+  "Control": 74,
+  "Cancelled": 10
+ },
+ "statusRawVariants": [
+  "CANCELED",
+  "Job Cancelled",
+  "Job Complete",
+  "Job Control",
+  "Job Waiting",
+  "Job canceled",
+  "Job complete",
+  "job complete",
+  "ยกเลิก Job"
+ ],
+ "missing": {
+  "SEA Import.etd": 42,
+  "SEA Import.eta": 11,
+  "SEA Import.customer": 3,
+  "AIR Import.etd": 7,
+  "Air Export.job_date": 25,
+  "SEA Export.job_date": 247,
+  "SEA Export.eta": 3
+ },
+ "dateFailures": {
+  "SEA Import.ETD": 20,
+  "AIR Import.ETD": 1
+ },
+ "rejectedRows": 0,
+ "rejectsSample": [],
+ "duplicateJobNumbers": {
+  "SI26070006": 2,
+  "SHSI26070039": 2,
+  "SHSI26080020": 2,
+  "SHAI26100004": 2,
+  "AE26070001": 2,
+  "AE26070002": 2,
+  "SHAE26090007": 2,
+  "SHSE26090051": 2
+ },
+ "transportRows": 549,
+ "containerBuckets": {
+  "40' HC": 140,
+  "รถยนต์ 4/6 ล้อ": 337,
+  "20'": 49,
+  "40'": 8,
+  "อื่น ๆ": 15
+ },
+ "mismatchedServicePrefix": []
+}

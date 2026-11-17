@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-28T13:38:00+07:00",
+  "title": "Design System: Perkin Logistics Control Deck — FWD & Customs Operations Hub",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Perkin Signal Orange",
+        "canonical": "#f56a22",
+        "tonalRamp": ["#451a03", "#7c2d12", "#b45309", "#db5610", "#f56a22", "#ff8442", "#fed7aa", "#fff1e8"]
+      },
+      "perkin-navy": {
+        "role": "secondary",
+        "displayName": "Perkin Maritime Navy",
+        "canonical": "#071a2f",
+        "tonalRamp": ["#04101e", "#071a2f", "#0c2948", "#102238", "#073766", "#5288b6", "#9cafc2", "#bed0df", "#eaf4fc"]
+      },
+      "perkin-cream": {
+        "role": "neutral",
+        "displayName": "Perkin Manifest Cream",
+        "canonical": "#f7f5ef",
+        "tonalRamp": ["#102238", "#354658", "#526275", "#6e7e91", "#c5ced6", "#dce1e5", "#f1ede4", "#f7f5ef", "#ffffff"]
+      },
+      "status-emerald": {
+        "role": "tertiary",
+        "displayName": "Customs Cleared Emerald",
+        "canonical": "#0d7a5f",
+        "tonalRamp": ["#052e25", "#08473a", "#0d7a5f", "#0e7c66", "#31b47b", "#b5e5d8", "#e5f6f0"]
+      },
+      "status-crimson": {
+        "role": "tertiary",
+        "displayName": "Perkin Alert Red",
+        "canonical": "#d82936",
+        "tonalRamp": ["#450a0a", "#7f1d1d", "#b42318", "#d82936", "#ef4444", "#fecaca", "#fae7e4"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display KPI Numeral", "purpose": "Top-level KPI strip metrics with Manrope & IBM Plex Mono tabular numeral alignment." },
+      "headline": { "displayName": "Page & Drawer Headline", "purpose": "Topbar page titles and slide-over drawer job identifiers in Manrope + IBM Plex Sans Thai." },
+      "title": { "displayName": "Panel Title", "purpose": "Section headers inside bordered ledger panels." },
+      "body": { "displayName": "Operational Body", "purpose": "High-legibility looped Thai/English table cells, form inputs, and milestone descriptions in IBM Plex Sans Thai (14.5px)." },
+      "label": { "displayName": "Monospace Ledger Label", "purpose": "Uppercase table headers, service chips, and sync status badges in IBM Plex Mono." }
+    },
+    "shadows": [
+      { "name": "focus-ring", "value": "0 0 0 3px rgba(245, 106, 34, 0.16)", "purpose": "Keyboard and input focus halo paired with #f56a22 border." },
+      { "name": "drawer-rail-mobile", "value": "20px 0 40px rgba(7, 26, 47, 0.25)", "purpose": "Off-canvas navigation rail elevation below 1024px." }
+    ],
+    "motion": [
+      { "name": "ease-drawer", "value": "cubic-bezier(0.2, 0.8, 0.2, 1)", "purpose": "220ms slide-over transition for the right-hand job inspection drawer." },
+      { "name": "ease-ui", "value": "140ms ease", "purpose": "Button, row, and navigation state transitions." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Perkin Primary Action Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary CTA in Perkin Signal Orange (#f56a22) for uploading FWD files and committing Excel + Web edits.",
+      "html": "<button class=\"ds-btn-primary\">อัปโหลด FWD</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 14px; border: 1px solid transparent; border-radius: 6px; background: #f56a22; color: #ffffff; font-family: 'IBM Plex Sans Thai', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 140ms ease; } .ds-btn-primary:hover { background: #db5610; }"
+    },
+    {
+      "name": "Perkin Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Neutral bordered button for secondary actions and drawer dismissal.",
+      "html": "<button class=\"ds-btn-secondary\">ใช้ไฟล์ตัวอย่าง</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 14px; border: 1px solid #dce1e5; border-radius: 6px; background: #ffffff; color: #102238; font-family: 'IBM Plex Sans Thai', sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Perkin Logistics — Maritime Freight Manifest & Port Control Ledger",
+    "overview": "Built specifically for Perkin Logistics (Thailand) Co., Ltd. (perkin-logistics.com) using Next.js 14, React, TypeScript, and Tailwind CSS. Combines Perkin's official brand palette—Perkin Maritime Navy (#071a2f / #0c2948), Perkin Royal Blue (#073766), Perkin Signal Orange (#f56a22), and Warm Manifest Cream (#f7f5ef)—with IBM Plex Sans Thai (looped Thai typography at 14.5px base size) and Manrope display headings for effortless, fatigue-free reading across 989+ shipment records.",
+    "keyCharacteristics": [
+      "Perkin Logistics brand alignment: Deep Navy (#071a2f) command rail, skewed orange P emblem + official Perkin Logistics logo, and Signal Orange (#f56a22) primary actions",
+      "High-legibility looped Thai typography (IBM Plex Sans Thai at 14.5px base size) paired with Manrope headings and IBM Plex Mono tabular numbers",
+      "Component-driven Next.js 14 App Router + TypeScript + Tailwind CSS architecture with built-in REST API routes (/api/dashboard, /api/jobs/[jobNo], /api/uploads)",
+      "Architectural 1px hairline ledger grids (#dce1e5) on warm Perkin cream paper (#f7f5ef)"
+    ],
+    "rules": [
+      { "name": "The Looped Thai Legibility Rule", "body": "All Thai operational copy, customer names, and form labels use IBM Plex Sans Thai (with loops) at 14px–15px with 1.55 line-height so staff can distinguish similar Thai characters effortlessly during long shifts.", "section": "typography" },
+      { "name": "The Tabular Identifier Rule", "body": "Every Job No, Transport No (TS26070003), Advance No (AV26070112), B/L number, date, day count, and currency value must use IBM Plex Mono with font-variant-numeric: tabular-nums.", "section": "typography" },
+      { "name": "The Perkin Brand Discipline Rule", "body": "Perkin Signal Orange (#f56a22) is reserved for the brand emblem, primary CTAs, and active workflow highlights; Cleared Emerald (#0d7a5f), Royal Blue (#073766), and Alert Red (#d82936) signal operational state.", "section": "colors" }
+    ],
+    "dos": [
+      "Do keep IBM Plex Sans Thai at >=14px for body table cells and form controls.",
+      "Do keep IBM Plex Mono (tabular-nums) on all job identifiers, B/L codes, dates, row numbers, and financial figures.",
+      "Do surface data provenance and Excel sync state (OneDrive Excel Synced, source sheet, and row number) so operators trust that Web and Excel match 100%."
+    ],
+    "donts": [
+      "Don't use tiny (<11px) loopless Thai fonts that cause eye strain in dense operational tables.",
+      "Don't add eyebrow/kicker text above headings in headers or drawers.",
+      "Don't use multi-pixel colored left borders (border-l-4) on cards or navigation items."
+    ]
+  }
+}

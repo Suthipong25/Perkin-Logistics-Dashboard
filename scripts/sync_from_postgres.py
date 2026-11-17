@@ -18,9 +18,11 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_DIR = os.path.join(BASE_DIR, 'dashboard', 'data')
-ENV_PATH = os.path.join(BASE_DIR, 'dashboard', '.env')
+LOCAL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(LOCAL_DIR, 'data')
+ENV_PATH = os.path.join(LOCAL_DIR, '.env')
+if not os.path.exists(ENV_PATH):
+    ENV_PATH = os.path.join(os.path.dirname(LOCAL_DIR), 'dashboard', '.env')
 PSQL_PATH = r"C:\Program Files\PostgreSQL\18\bin\psql.exe"
 
 

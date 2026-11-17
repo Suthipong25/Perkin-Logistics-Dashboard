@@ -1,0 +1,333 @@
+{
+  "name": "Perkin Logistics — Workflow #2: Web Editing Writeback (v0.3.1)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "job-edit-v031",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "edit-node-1-webhook",
+      "name": "Node 1: Webhook (POST /webhook/job-edit-v031)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        160,
+        280
+      ],
+      "webhookId": "perkin-job-edit-v031",
+      "notesInFlow": true,
+      "notes": "รับคำสั่งแก้ไขจาก Next.js API (PATCH /api/jobs/[jobNo])"
+    },
+    {
+      "parameters": {},
+      "id": "edit-node-1b-manual",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        160,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================================================\n// Node 2: ตาราง Mapping คอลัมน์ใน Excel (SHEET_COLUMN_MAP) ตามชีตจริง\n// =============================================================================\nconst SHEET_COLUMN_MAP = {\n  \"SEA Import\": { job: \"D\", status: \"C\", etd: \"A\", eta: \"B\", customer: \"E\", bl: \"G\", draft: \"H\", advance: \"L\", do: \"N\", customs: \"O\", cleared: \"P\", remark: \"Y\" },\n  \"AIR Import\": { job: \"D\", status: \"C\", etd: \"A\", eta: \"B\", customer: \"E\", bl: \"G\", draft: \"H\", advance: \"J\", do: \"L\", customs: \"M\", cleared: \"N\", remark: \"W\" },\n  \"Air Export\": { job: \"F\", status: \"E\", etd: \"C\", eta: \"D\", customer: \"G\", bl: \"I\", draft: \"J\", advance: \"N\", do: \"P\", customs: \"Q\", cleared: \"R\", remark: \"AA\" },\n  \"SEA Export\": { job: \"G\", status: \"F\", etd: \"D\", eta: \"E\", customer: \"H\", bl: \"J\", draft: \"K\", advance: \"O\", do: \"T\", customs: \"Q\", cleared: \"S\", remark: \"AE\" }\n};\n\nconst body = $json.body || $json || {};\nconst jobNo = String(body.jobNo || 'SHSI26100024').trim().toUpperCase();\nconst sourceSheet = String(body.sourceSheet || 'SEA Import');\nconst sourceRow = Number(body.sourceRow || 412);\nconst expectedVersion = Number(body.expectedVersion || 1);\nconst editId = String(body.editId || '00000000-0000-4000-8000-000000000001');\nconst changes = body.changes || {\n  status: 'In Progress',\n  statusDetail: 'Control',\n  etd: '2026-01-10',\n  eta: '2026-10-31',\n  draftDate: null,\n  customsDate: null,\n  doDate: null,\n  clearDate: null,\n  advanceDate: null,\n  remark: 'Updated via Perkin Logistics Web'\n};\n\n// แปลงชื่อฟิลด์จากเว็บให้ตรงกับคีย์ใน SHEET_COLUMN_MAP\nconst fieldAlias = {\n  status: 'status',\n  etd: 'etd',\n  eta: 'eta',\n  customer: 'customer',\n  bl: 'bl',\n  draft: 'draft',\n  draftDate: 'draft',\n  advance: 'advance',\n  advanceDate: 'advance',\n  do: 'do',\n  doDate: 'do',\n  customs: 'customs',\n  customsDate: 'customs',\n  cleared: 'cleared',\n  clearDate: 'cleared',\n  remark: 'remark'\n};\n\nconst statusToExcelText = {\n  Completed: 'Job Complete',\n  Control: 'Job Control',\n  Waiting: 'Job Waiting',\n  Cancelled: 'Job Cancelled'\n};\n\nconst cols = SHEET_COLUMN_MAP[sourceSheet] || SHEET_COLUMN_MAP['SEA Import'];\nconst patches = [];\n\nfor (const [rawKey, rawVal] of Object.entries(changes)) {\n  const mapKey = fieldAlias[rawKey];\n  if (!mapKey || !cols[mapKey]) continue;\n  let cellValue = rawVal === null || rawVal === undefined ? '' : String(rawVal);\n  if (mapKey === 'status' && changes.statusDetail && statusToExcelText[changes.statusDetail]) {\n    cellValue = statusToExcelText[changes.statusDetail];\n  }\n  patches.push({\n    field: rawKey,\n    colLetter: cols[mapKey],\n    address: `${cols[mapKey]}${sourceRow}`,\n    value: cellValue\n  });\n}\n\nconst shareUrl = 'https://perkinthailand-my.sharepoint.com/:x:/r/personal/chittiporn_p_perkin-logistics_com/_layouts/15/Doc.aspx?sourcedoc=%7BAFD2AA7F-6308-4DCE-9963-C9D64EAA0745%7D&file=JOB_Daily_2026%20STATUS_Dashboard.xlsx';\nconst shareId = 'u!' + Buffer.from(shareUrl, 'utf8')\n  .toString('base64')\n  .replace(/=+$/, '')\n  .replace(/\\//g, '_')\n  .replace(/\\+/g, '-');\n\nreturn [{\n  json: {\n    editId,\n    jobNo,\n    sourceSheet,\n    sourceRow,\n    expectedVersion,\n    changes,\n    patches,\n    driveItemUrl: `https://graph.microsoft.com/v1.0/shares/${shareId}/driveItem`\n  }\n}];"
+      },
+      "id": "edit-node-2-map",
+      "name": "Node 2: Map Web Fields (SHEET_COLUMN_MAP)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        340
+      ],
+      "notesInFlow": true,
+      "notes": "จับคู่ฟิลด์ที่แก้บนเว็บเข้ากับคอลัมน์จริงของแต่ละชีต (SEA Import, AIR Import, Air Export, SEA Export)"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.driveItemUrl }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOAuth2Api",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "edit-node-3-resolve",
+      "name": "Node 3: Resolve driveId & itemId",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        680,
+        340
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "microsoftOAuth2Api": {
+          "id": "i5DReGGKcWXHmlyg",
+          "name": "Microsoft account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.microsoft.com/v1.0/drives/{{ $json.parentReference.driveId }}/items/{{ $json.id }}/workbook/createSession",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"persistChanges\": true\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "edit-node-4-session",
+      "name": "Node 4: Create Workbook Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        940,
+        340
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "microsoftOAuth2Api": {
+          "id": "i5DReGGKcWXHmlyg",
+          "name": "Microsoft account"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "เปิด Session แบบ persistChanges: true"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.microsoft.com/v1.0/$batch",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => {\n  const driveId = $('Node 3: Resolve driveId & itemId').first().json.parentReference.driveId;\n  const itemId = $('Node 3: Resolve driveId & itemId').first().json.id;\n  const sessionId = $json.id;\n  const mapped = $('Node 2: Map Web Fields (SHEET_COLUMN_MAP)').first().json;\n  return JSON.stringify({\n    requests: mapped.patches.map((p, idx) => ({\n      id: String(idx + 1),\n      method: 'PATCH',\n      url: `/drives/${driveId}/items/${itemId}/workbook/worksheets('${encodeURIComponent(mapped.sourceSheet)}')/range(address='${p.address}')`,\n      headers: {\n        'workbook-session-id': sessionId,\n        'Content-Type': 'application/json'\n      },\n      body: { values: [[p.value]] }\n    }))\n  });\n})() }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "edit-node-5-patch",
+      "name": "Node 5: Batch PATCH Edited Cells ($batch)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1200,
+        340
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "microsoftOAuth2Api": {
+          "id": "i5DReGGKcWXHmlyg",
+          "name": "Microsoft account"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "ยิง $batch PATCH เฉพาะเซลล์ที่ถูกแก้ไข (เช่น C237, M237, W237)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.microsoft.com/v1.0/drives/{{ $('Node 3: Resolve driveId & itemId').first().json.parentReference.driveId }}/items/{{ $('Node 3: Resolve driveId & itemId').first().json.id }}/workbook/application/calculate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "workbook-session-id",
+              "value": "={{ $('Node 4: Create Workbook Session').first().json.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"calculationType\": \"Full\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "edit-node-6a-calc",
+      "name": "Node 6a: Calculate Workbook Formulas (Full)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1460,
+        340
+      ],
+      "credentials": {
+        "microsoftOAuth2Api": {
+          "id": "i5DReGGKcWXHmlyg",
+          "name": "Microsoft account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.microsoft.com/v1.0/drives/{{ $('Node 3: Resolve driveId & itemId').first().json.parentReference.driveId }}/items/{{ $('Node 3: Resolve driveId & itemId').first().json.id }}/workbook/closeSession",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "workbook-session-id",
+              "value": "={{ $('Node 4: Create Workbook Session').first().json.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "edit-node-6b-close",
+      "name": "Node 6b: Close Workbook Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1720,
+        340
+      ],
+      "credentials": {
+        "microsoftOAuth2Api": {
+          "id": "i5DReGGKcWXHmlyg",
+          "name": "Microsoft account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ (() => {\n  const m = $('Node 2: Map Web Fields (SHEET_COLUMN_MAP)').first().json;\n  const c = m.changes || {};\n  const q = (v) => (v === null || v === undefined || v === '') ? 'NULL' : `'${String(v).replace(/'/g, \"''\")}'`;\n  return `\nUPDATE jobs\nSET status = COALESCE(${q(c.status)}, status),\n    status_detail = COALESCE(${q(c.statusDetail)}, status_detail),\n    etd = ${c.etd ? q(c.etd) + '::date' : 'etd'},\n    eta = ${c.eta ? q(c.eta) + '::date' : 'eta'},\n    draft_date = ${c.draftDate !== undefined ? (c.draftDate ? q(c.draftDate) + '::date' : 'NULL') : 'draft_date'},\n    draft_customs = (${c.draftDate !== undefined ? (c.draftDate ? 'TRUE' : 'FALSE') : 'draft_customs'}),\n    customs_date = ${c.customsDate !== undefined ? (c.customsDate ? q(c.customsDate) + '::date' : 'NULL') : 'customs_date'},\n    customs_filed = (${c.customsDate !== undefined ? (c.customsDate ? 'TRUE' : 'FALSE') : 'customs_filed'}),\n    do_date = ${c.doDate !== undefined ? (c.doDate ? q(c.doDate) + '::date' : 'NULL') : 'do_date'},\n    do_released = (${c.doDate !== undefined ? (c.doDate ? 'TRUE' : 'FALSE') : 'do_released'}),\n    clear_date = ${c.clearDate !== undefined ? (c.clearDate ? q(c.clearDate) + '::date' : 'NULL') : 'clear_date'},\n    cleared = (${c.clearDate !== undefined ? (c.clearDate ? 'TRUE' : 'FALSE') : 'cleared'}),\n    advance_date = ${c.advanceDate !== undefined ? (c.advanceDate ? q(c.advanceDate) + '::date' : 'NULL') : 'advance_date'},\n    advance_doc = (${c.advanceDate !== undefined ? (c.advanceDate ? 'TRUE' : 'FALSE') : 'advance_doc'}),\n    remark = COALESCE(${q(c.remark)}, remark),\n    version = version + 1,\n    updated_at = NOW()\nWHERE job_no = ${q(m.jobNo)} AND version = ${Number(m.expectedVersion || 1)};\n\nUPDATE job_edits\nSET status = 'done',\n    applied_at = NOW()\nWHERE id = ${q(m.editId)}::uuid;\n`;\n})() }}",
+        "options": {}
+      },
+      "id": "edit-node-7-postgres",
+      "name": "Node 7: Commit SQL to PostgreSQL (jobs & job_edits)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1980,
+        340
+      ],
+      "notesInFlow": true,
+      "notes": "รัน SQL UPDATE jobs (เพิ่ม version + 1) และ UPDATE job_edits SET status = 'done' เมื่อ Graph ตอบ 200 OK"
+    }
+  ],
+  "connections": {
+    "Node 1: Webhook (POST /webhook/job-edit-v031)": {
+      "main": [
+        [
+          {
+            "node": "Node 2: Map Web Fields (SHEET_COLUMN_MAP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Node 2: Map Web Fields (SHEET_COLUMN_MAP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Node 2: Map Web Fields (SHEET_COLUMN_MAP)": {
+      "main": [
+        [
+          {
+            "node": "Node 3: Resolve driveId & itemId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Node 3: Resolve driveId & itemId": {
+      "main": [
+        [
+          {
+            "node": "Node 4: Create Workbook Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Node 4: Create Workbook Session": {
+      "main": [
+        [
+          {
+            "node": "Node 5: Batch PATCH Edited Cells ($batch)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Node 5: Batch PATCH Edited Cells ($batch)": {
+      "main": [
+        [
+          {
+            "node": "Node 6a: Calculate Workbook Formulas (Full)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Node 6a: Calculate Workbook Formulas (Full)": {
+      "main": [
+        [
+          {
+            "node": "Node 6b: Close Workbook Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Node 6b: Close Workbook Session": {
+      "main": [
+        [
+          {
+            "node": "Node 7: Commit SQL to PostgreSQL (jobs & job_edits)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

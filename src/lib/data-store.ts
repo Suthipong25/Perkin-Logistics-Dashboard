@@ -83,6 +83,18 @@ function syncJobToSQLiteAsync(jobNo: string, patch: Partial<JobRecord>): void {
   }
 }
 
+function syncJobToPostgresAsync(jobNo: string, patch: Partial<JobRecord>): void {
+  try {
+    const scriptPath = path.resolve(process.cwd(), "scripts/update_job_postgres.py");
+    if (!fs.existsSync(scriptPath)) return;
+
+    const pythonExe = process.env.PYTHON_PATH || "python";
+    execFile(pythonExe, [scriptPath, jobNo, JSON.stringify(patch)], () => {});
+  } catch {
+    // Non-blocking fire-and-forget
+  }
+}
+
 export function updateJobInMemory(jobNo: string, patch: Partial<JobRecord>): JobRecord | null {
   const jobs = getJobs();
   const idx = jobs.findIndex((j) => j.jobNo === jobNo);
@@ -100,6 +112,9 @@ export function updateJobInMemory(jobNo: string, patch: Partial<JobRecord>): Job
 
   // 3. Background sync to SQLite master database & audit history
   syncJobToSQLiteAsync(jobNo, patch);
+
+  // 4. Background sync to PostgreSQL database & audit history
+  syncJobToPostgresAsync(jobNo, patch);
 
   return jobs[idx];
 }

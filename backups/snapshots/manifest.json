@@ -1,0 +1,302 @@
+[
+  {
+    "id": "2026-11-02_12-00-48",
+    "filename": "snapshot_2026-11-02_12-00-48.xlsx",
+    "timestamp": "2026-11-02T12:00:48.716874",
+    "displayTime": "02/11/2026 12:00:48",
+    "fileSize": 7390905,
+    "totalJobs": 1144,
+    "totalTransport": 570,
+    "sha256": "88cffcf7e8f70e43fd757e10de9702977a6b745ff8f611ba620d6e51631f10d1"
+  },
+  {
+    "id": "2026-11-02_11-55-49",
+    "filename": "snapshot_2026-11-02_11-55-49.xlsx",
+    "timestamp": "2026-11-02T11:55:49.627111",
+    "displayTime": "02/11/2026 11:55:49",
+    "fileSize": 7390866,
+    "totalJobs": 1144,
+    "totalTransport": 570,
+    "sha256": "5652ecad3b7082aee3fa8aadd647bba9090b65d4660e972482e0877e60630c2a"
+  },
+  {
+    "id": "2026-11-02_11-51-54",
+    "filename": "snapshot_2026-11-02_11-51-54.xlsx",
+    "timestamp": "2026-11-02T11:51:54.145100",
+    "displayTime": "02/11/2026 11:51:54",
+    "fileSize": 7390572,
+    "totalJobs": 1144,
+    "totalTransport": 570,
+    "sha256": "dfefd14e147ba4fbc7f41cf22580a0de2a4e27525f7612f3300c61e1776f2d99"
+  },
+  {
+    "id": "2026-11-02_11-50-20",
+    "filename": "snapshot_2026-11-02_11-50-20.xlsx",
+    "timestamp": "2026-11-02T11:50:20.015732",
+    "displayTime": "02/11/2026 11:50:20",
+    "fileSize": 7390416,
+    "totalJobs": 1144,
+    "totalTransport": 570,
+    "sha256": "b94c027fb81d22a85a4b714ebd1cc0a59add4668935d0ea73524682db47fee11"
+  },
+  {
+    "id": "2026-11-02_11-46-52",
+    "filename": "snapshot_2026-11-02_11-46-52.xlsx",
+    "timestamp": "2026-11-02T11:46:52.091123",
+    "displayTime": "02/11/2026 11:46:52",
+    "fileSize": 7390431,
+    "totalJobs": 1144,
+    "totalTransport": 569,
+    "sha256": "e6a2006b801fecbda8ccc3466b36fcc283b7ac8da5f3d2151db308e16a4db10c"
+  },
+  {
+    "id": "2026-11-02_11-44-35",
+    "filename": "snapshot_2026-11-02_11-44-35.xlsx",
+    "timestamp": "2026-11-02T11:44:35.534547",
+    "displayTime": "02/11/2026 11:44:35",
+    "fileSize": 7390363,
+    "totalJobs": 1144,
+    "totalTransport": 569,
+    "sha256": "346f8d653f9f81d9d0f01c406107b328244cda9a8664e6d6dd9fe1cd7be7d1f6"
+  },
+  {
+    "id": "2026-11-02_11-38-58",
+    "filename": "snapshot_2026-11-02_11-38-58.xlsx",
+    "timestamp": "2026-11-02T11:38:58.229788",
+    "displayTime": "02/11/2026 11:38:58",
+    "fileSize": 7390328,
+    "totalJobs": 1136,
+    "totalTransport": 569,
+    "sha256": "31c834beb2ea9fee0e553e7bf355c2e44b80aea29724108a449f71b13a7858a7"
+  },
+  {
+    "id": "2026-11-02_11-36-46",
+    "filename": "snapshot_2026-11-02_11-36-46.xlsx",
+    "timestamp": "2026-11-02T11:36:46.184534",
+    "displayTime": "02/11/2026 11:36:46",
+    "fileSize": 7390020,
+    "totalJobs": 1136,
+    "totalTransport": 569,
+    "sha256": "969f3004e275efb2e70914879def8d413f9a7efe219ee6f78863baa03dcd0200"
+  },
+  {
+    "id": "2026-11-02_11-29-40",
+    "filename": "snapshot_2026-11-02_11-29-40.xlsx",
+    "timestamp": "2026-11-02T11:29:40.218069",
+    "displayTime": "02/11/2026 11:29:40",
+    "fileSize": 7389999,
+    "totalJobs": 1136,
+    "totalTransport": 569,
+    "sha256": "b06562799a154b82e87fe9a5eef79beac9643f262c8c06e940c634c993c03ef6"
+  },
+  {
+    "id": "2026-11-02_10-17-23",
+    "filename": "snapshot_2026-11-02_10-17-23.xlsx",
+    "timestamp": "2026-11-02T10:17:23.069852",
+    "displayTime": "02/11/2026 10:17:23",
+    "fileSize": 7389876,
+    "totalJobs": 1136,
+    "totalTransport": 569,
+    "sha256": "0e095b23adb2b9f7a7fdbd631d8698973819b863b3ba7104b513fa37b6f0f0a5"
+  },
+  {
+    "id": "2026-11-02_09-46-20",
+    "filename": "snapshot_2026-11-02_09-46-20.xlsx",
+    "timestamp": "2026-11-02T09:46:20.246335",
+    "displayTime": "02/11/2026 09:46:20",
+    "fileSize": 7389885,
+    "totalJobs": 1136,
+    "totalTransport": 569,
+    "sha256": "6bf6e8afb4a6834cba0583ddcd81525e6ef2caec24125161e6755a37c2891f65"
+  },
+  {
+    "id": "2026-11-02_09-25-19",
+    "filename": "snapshot_2026-11-02_09-25-19.xlsx",
+    "timestamp": "2026-11-02T09:25:19.612476",
+    "displayTime": "02/11/2026 09:25:19",
+    "fileSize": 7389988,
+    "totalJobs": 1136,
+    "totalTransport": 569,
+    "sha256": "e7fa0f61fad207bdd6a3ed16188f4ec3c08b955e24d78371bc6504f0834f63c9"
+  },
+  {
+    "id": "2026-11-02_08-52-15",
+    "filename": "snapshot_2026-11-02_08-52-15.xlsx",
+    "timestamp": "2026-11-02T08:52:15.242284",
+    "displayTime": "02/11/2026 08:52:15",
+    "fileSize": 7390165,
+    "totalJobs": 1135,
+    "totalTransport": 569,
+    "sha256": "eeaf07f4fbc41aa37d9fdae6d123f6b49c11987e0b29eabaf12718e51df619b4"
+  },
+  {
+    "id": "2026-11-02_08-50-58",
+    "filename": "snapshot_2026-11-02_08-50-58.xlsx",
+    "timestamp": "2026-11-02T08:50:58.602811",
+    "displayTime": "02/11/2026 08:50:58",
+    "fileSize": 7390042,
+    "totalJobs": 1135,
+    "totalTransport": 569,
+    "sha256": "0733edfb184b583e7a8ce02371995ddd625bf2b31422881d5c865c1ad3fcd95f"
+  },
+  {
+    "id": "2026-11-02_08-35-41",
+    "filename": "snapshot_2026-11-02_08-35-41.xlsx",
+    "timestamp": "2026-11-02T08:35:41.151196",
+    "displayTime": "02/11/2026 08:35:41",
+    "fileSize": 7390011,
+    "totalJobs": 1135,
+    "totalTransport": 569,
+    "sha256": "d58422ebeb5ffeff5cd2697caac3a56d58b1d1bd5fd912232833db75e03cc2e1"
+  },
+  {
+    "id": "2026-10-30_15-20-32",
+    "filename": "snapshot_2026-10-30_15-20-32.xlsx",
+    "timestamp": "2026-10-30T15:20:32.367735",
+    "displayTime": "30/10/2026 15:20:32",
+    "fileSize": 7387951,
+    "totalJobs": 1133,
+    "totalTransport": 569,
+    "sha256": "53b182f97f126e2004f979c09e19a9af971878fe08fdf9114f981216997d98bf"
+  },
+  {
+    "id": "2026-10-30_15-02-45",
+    "filename": "snapshot_2026-10-30_15-02-45.xlsx",
+    "timestamp": "2026-10-30T15:02:45.013943",
+    "displayTime": "30/10/2026 15:02:45",
+    "fileSize": 7387969,
+    "totalJobs": 1133,
+    "totalTransport": 568,
+    "sha256": "4a276ee43af2f2ff69407513c8b4a1515adb98a583ddf02c67040843b6db7d9c"
+  },
+  {
+    "id": "2026-10-30_14-57-28",
+    "filename": "snapshot_2026-10-30_14-57-28.xlsx",
+    "timestamp": "2026-10-30T14:57:28.710163",
+    "displayTime": "30/10/2026 14:57:28",
+    "fileSize": 7387883,
+    "totalJobs": 1133,
+    "totalTransport": 568,
+    "sha256": "33b333513d4bb09b2e644b5c5c8e6e7d6c9bf474dcd98a6e376ba8b6526519ce"
+  },
+  {
+    "id": "2026-10-30_14-55-28",
+    "filename": "snapshot_2026-10-30_14-55-28.xlsx",
+    "timestamp": "2026-10-30T14:55:28.710641",
+    "displayTime": "30/10/2026 14:55:28",
+    "fileSize": 7387781,
+    "totalJobs": 1133,
+    "totalTransport": 568,
+    "sha256": "acfa62cf387ed7901cc1e6a83f0b2007c199331203ae8db6e83cf3aaa2938b6c"
+  },
+  {
+    "id": "2026-10-30_14-52-29",
+    "filename": "snapshot_2026-10-30_14-52-29.xlsx",
+    "timestamp": "2026-10-30T14:52:29.364142",
+    "displayTime": "30/10/2026 14:52:29",
+    "fileSize": 7387719,
+    "totalJobs": 1133,
+    "totalTransport": 568,
+    "sha256": "88bff3d3bcabbc3ab40f4d1a05d24c11f346bd82b9303d2c4fad137196e02056"
+  },
+  {
+    "id": "2026-10-30_14-50-27",
+    "filename": "snapshot_2026-10-30_14-50-27.xlsx",
+    "timestamp": "2026-10-30T14:50:27.883780",
+    "displayTime": "30/10/2026 14:50:27",
+    "fileSize": 7387842,
+    "totalJobs": 1132,
+    "totalTransport": 568,
+    "sha256": "aa7db547f46b08656eff0119dac292cada82e9f8ec6c69e47d1102f01fa4da68"
+  },
+  {
+    "id": "2026-10-30_14-18-14",
+    "filename": "snapshot_2026-10-30_14-18-14.xlsx",
+    "timestamp": "2026-10-30T14:18:14.982809",
+    "displayTime": "30/10/2026 14:18:14",
+    "fileSize": 7387759,
+    "totalJobs": 1132,
+    "totalTransport": 566,
+    "sha256": "c3f6f91e0e47eb4e6743b0d174bec23f95a75dc3e53c72999497feb47306ac87"
+  },
+  {
+    "id": "2026-10-30_14-01-09",
+    "filename": "snapshot_2026-10-30_14-01-09.xlsx",
+    "timestamp": "2026-10-30T14:01:09.616452",
+    "displayTime": "30/10/2026 14:01:09",
+    "fileSize": 7387975,
+    "totalJobs": 1132,
+    "totalTransport": 566,
+    "sha256": "f26d06ffc3abc6ed4ff7689465fb3c240349c7d20c87cb8a43d9ca01eec035de"
+  },
+  {
+    "id": "2026-10-30_14-00-50",
+    "filename": "snapshot_2026-10-30_14-00-50.xlsx",
+    "timestamp": "2026-10-30T14:00:50.733019",
+    "displayTime": "30/10/2026 14:00:50",
+    "fileSize": 172032,
+    "totalJobs": 1132,
+    "totalTransport": 566,
+    "sha256": "29297612bc73ac49bb62db15576b9cb4b67c9b4b98445377f628a7e8cb71bd85"
+  },
+  {
+    "id": "2026-10-30_13-35-10",
+    "filename": "snapshot_2026-10-30_13-35-10.xlsx",
+    "timestamp": "2026-10-30T13:35:10.822599",
+    "displayTime": "30/10/2026 13:35:10",
+    "fileSize": 7387975,
+    "totalJobs": 1132,
+    "totalTransport": 566,
+    "sha256": "f26d06ffc3abc6ed4ff7689465fb3c240349c7d20c87cb8a43d9ca01eec035de"
+  },
+  {
+    "id": "2026-10-30_11-42-56",
+    "filename": "snapshot_2026-10-30_11-42-56.xlsx",
+    "timestamp": "2026-10-30T11:42:56.692114",
+    "displayTime": "30/10/2026 11:42:56",
+    "fileSize": 7387659,
+    "totalJobs": 1131,
+    "totalTransport": 566,
+    "sha256": "82616f93d2f39b2040667fd05078d53a0f58628b23b10a7e251369a6efee1e2f"
+  },
+  {
+    "id": "2026-10-30_11-42-39",
+    "filename": "snapshot_2026-10-30_11-42-39.xlsx",
+    "timestamp": "2026-10-30T11:42:39.077042",
+    "displayTime": "30/10/2026 11:42:39",
+    "fileSize": 7387659,
+    "totalJobs": 1131,
+    "totalTransport": 566,
+    "sha256": "421aa236d8692a7cf79da18cb5f9349d2713e4bc3af0e5f1ad46c5ca8c74390c"
+  },
+  {
+    "id": "2026-10-30_11-39-12",
+    "filename": "snapshot_2026-10-30_11-39-12.xlsx",
+    "timestamp": "2026-10-30T11:39:12.812484",
+    "displayTime": "30/10/2026 11:39:12",
+    "fileSize": 7387659,
+    "totalJobs": 1131,
+    "totalTransport": 566,
+    "sha256": "82616f93d2f39b2040667fd05078d53a0f58628b23b10a7e251369a6efee1e2f"
+  },
+  {
+    "id": "2026-10-30_11-23-26",
+    "filename": "snapshot_2026-10-30_11-23-26.xlsx",
+    "timestamp": "2026-10-30T11:23:26.466560",
+    "displayTime": "30/10/2026 11:23:26",
+    "fileSize": 7387906,
+    "totalJobs": 1131,
+    "totalTransport": 566,
+    "sha256": "090ad0b876739a43c5d56bb846b3088afa5256c824a843636fe195dea5deabbe"
+  },
+  {
+    "id": "2026-10-30_11-23-08",
+    "filename": "snapshot_2026-10-30_11-23-08.xlsx",
+    "timestamp": "2026-10-30T11:23:08.447178",
+    "displayTime": "30/10/2026 11:23:08",
+    "fileSize": 794624,
+    "totalJobs": 1131,
+    "totalTransport": 566,
+    "sha256": "bb91058858138cc77031aa96ddd9ddd67a3c905315d26ae8f145bace384ca065"
+  }
+]
