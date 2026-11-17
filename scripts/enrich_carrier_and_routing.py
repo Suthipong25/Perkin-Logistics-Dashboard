@@ -100,7 +100,9 @@ def run_enrichment():
     print(f"Loaded {len(jobs)} jobs from jobs.json")
 
     # 1. 2026 Booking Report.xlsx
-    bkg_file = os.path.join(BASE_DIR, '2026 Booking Report.xlsx')
+    bkg_file = os.path.join(BASE_DIR, 'data', '2026 Booking Report.xlsx')
+    if not os.path.exists(bkg_file):
+        bkg_file = os.path.join(BASE_DIR, '2026 Booking Report.xlsx')
     if os.path.exists(bkg_file):
         print(f"Reading {bkg_file}...")
         wb = openpyxl.load_workbook(bkg_file, read_only=True, data_only=True)

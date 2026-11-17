@@ -22,10 +22,24 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_PATH = os.path.join(BASE_DIR, 'dashboard', 'data', 'perkin_logistics.db')
-SCHEMA_PATH = os.path.join(BASE_DIR, 'backend', 'sql', 'schema_sqlite.sql')
-JOBS_JSON = os.path.join(BASE_DIR, 'dashboard', 'data', 'jobs.json')
-TRANSPORT_JSON = os.path.join(BASE_DIR, 'dashboard', 'data', 'transport.json')
+if not os.path.exists(os.path.join(BASE_DIR, 'package.json')):
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DB_PATH = os.path.join(BASE_DIR, 'data', 'perkin_logistics.db')
+if not os.path.exists(os.path.dirname(DB_PATH)):
+    DB_PATH = os.path.join(BASE_DIR, 'dashboard', 'data', 'perkin_logistics.db')
+
+SCHEMA_PATH = os.path.join(BASE_DIR, 'sql', 'schema_sqlite.sql')
+if not os.path.exists(SCHEMA_PATH):
+    SCHEMA_PATH = os.path.join(BASE_DIR, 'backend', 'sql', 'schema_sqlite.sql')
+
+JOBS_JSON = os.path.join(BASE_DIR, 'data', 'jobs.json')
+if not os.path.exists(JOBS_JSON):
+    JOBS_JSON = os.path.join(BASE_DIR, 'dashboard', 'data', 'jobs.json')
+
+TRANSPORT_JSON = os.path.join(BASE_DIR, 'data', 'transport.json')
+if not os.path.exists(TRANSPORT_JSON):
+    TRANSPORT_JSON = os.path.join(BASE_DIR, 'dashboard', 'data', 'transport.json')
 
 
 def get_connection():

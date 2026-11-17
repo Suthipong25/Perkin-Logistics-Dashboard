@@ -350,10 +350,22 @@ def extract_transport(path):
 def run():
     import shutil
     base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    booking = os.path.join(base, '2026 Booking Report.xlsx')
+    if not os.path.exists(os.path.join(base, 'package.json')):
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    booking = os.path.join(base, 'data', '2026 Booking Report.xlsx')
+    if not os.path.exists(booking):
+        booking = os.path.join(base, '2026 Booking Report.xlsx')
+
     backup = os.path.join(base, 'backups', '2026_Booking_Report_Original.xlsx')
-    daily = os.path.join(base, 'JOB_Daily_2026 STATUS_Dashboard.xlsx')
-    data_dir = os.path.join(base, 'dashboard', 'data')
+
+    daily = os.path.join(base, 'data', 'JOB_Daily_2026 STATUS_Dashboard.xlsx')
+    if not os.path.exists(daily):
+        daily = os.path.join(base, 'JOB_Daily_2026 STATUS_Dashboard.xlsx')
+
+    data_dir = os.path.join(base, 'data')
+    if not os.path.exists(data_dir):
+        data_dir = os.path.join(base, 'dashboard', 'data')
 
     def has_monthly_sheets(path):
         try:

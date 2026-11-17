@@ -26,8 +26,16 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_PATH = os.path.join(BASE_DIR, 'dashboard', 'data', 'perkin_logistics.db')
-OUTPUT_SQL = os.path.join(BASE_DIR, 'backend', 'sql', 'postgres_migration.sql')
+if not os.path.exists(os.path.join(BASE_DIR, 'package.json')):
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DB_PATH = os.path.join(BASE_DIR, 'data', 'perkin_logistics.db')
+if not os.path.exists(DB_PATH):
+    DB_PATH = os.path.join(BASE_DIR, 'dashboard', 'data', 'perkin_logistics.db')
+
+OUTPUT_SQL = os.path.join(BASE_DIR, 'sql', 'postgres_migration.sql')
+if not os.path.exists(os.path.dirname(OUTPUT_SQL)):
+    OUTPUT_SQL = os.path.join(BASE_DIR, 'backend', 'sql', 'postgres_migration.sql')
 PSQL_PATH = r"C:\Program Files\PostgreSQL\18\bin\psql.exe"
 
 

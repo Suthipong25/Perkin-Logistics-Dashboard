@@ -129,9 +129,20 @@ def load_live_customs_status(live_xlsx_path):
 
 def run():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    booking_xlsx = os.path.join(base_dir, '2026 Booking Report.xlsx')
-    output_jobs_json = os.path.join(base_dir, 'dashboard', 'data', 'jobs.json')
-    live_xlsx = os.path.join(base_dir, 'JOB_Daily_2026 STATUS_Dashboard.xlsx')
+    if not os.path.exists(os.path.join(base_dir, 'package.json')):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    booking_xlsx = os.path.join(base_dir, 'data', '2026 Booking Report.xlsx')
+    if not os.path.exists(booking_xlsx):
+        booking_xlsx = os.path.join(base_dir, '2026 Booking Report.xlsx')
+
+    output_jobs_json = os.path.join(base_dir, 'data', 'jobs.json')
+    if not os.path.exists(os.path.dirname(output_jobs_json)):
+        output_jobs_json = os.path.join(base_dir, 'dashboard', 'data', 'jobs.json')
+
+    live_xlsx = os.path.join(base_dir, 'data', 'JOB_Daily_2026 STATUS_Dashboard.xlsx')
+    if not os.path.exists(live_xlsx):
+        live_xlsx = os.path.join(base_dir, 'JOB_Daily_2026 STATUS_Dashboard.xlsx')
     if not os.path.exists(live_xlsx):
         live_xlsx = os.path.join(base_dir, 'tmp', 'live_sharepoint_test.xlsx')
 
