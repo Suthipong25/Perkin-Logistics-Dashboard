@@ -1,6 +1,7 @@
 export type ServiceKey = "SEA Import" | "SEA Export" | "AIR Import" | "AIR Export" | "Transport" | "Freight";
 
 export interface JobRecord {
+  id?: string;
   jobNo: string;
   service: ServiceKey;
   serviceLabel: string;
@@ -27,6 +28,8 @@ export interface JobRecord {
   remark?: string;
   sourceSheet?: string;
   sourceRow: number;
+  runningNo?: number;
+  transportNo?: string;
   version?: number;
   nextAction: string | null;
   month: string | null;

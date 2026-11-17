@@ -1,7 +1,8 @@
-import { Pool } from "pg";
+import { Pool, PoolClient } from "pg";
 import { JobRecord, TransportRecord } from "@/types/dashboard";
 
 let pool: Pool | null = null;
+let localPool: Pool | null = null;
 
 export function getDbPool(): Pool | null {
   const connStr = process.env.DATABASE_URL || process.env.DATABASE_URL_WEB;
@@ -15,6 +16,45 @@ export function getDbPool(): Pool | null {
     });
   }
   return pool;
+}
+
+export function getLocalDbPool(): Pool | null {
+  if (process.env.VERCEL) return null;
+  const connStr =
+    process.env.DATABASE_URL_LOCAL ||
+    "postgresql://postgres:Perkin2Logistics@192.168.1.153:5432/Test001";
+  if (!connStr) return null;
+  if (!localPool) {
+    localPool = new Pool({
+      connectionString: connStr,
+      connectionTimeoutMillis: 2500,
+      idleTimeoutMillis: 30000,
+      max: 5,
+    });
+  }
+  return localPool;
+}
+
+function sanitizeDate(d: any): string | null {
+  if (!d) return null;
+  const s = String(d).trim();
+  if (!s || s === "null" || s === "undefined") return null;
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) {
+    const y = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10);
+    const day = parseInt(m[3], 10);
+    if (y >= 1990 && y <= 2050 && mo >= 1 && mo <= 12 && day >= 1 && day <= 31) {
+      return `${y}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+  }
+  return null;
+}
+
+function sanitizeNum(n: any): number | null {
+  if (n === null || n === undefined || n === "") return null;
+  const num = Number(n);
+  return isNaN(num) ? null : num;
 }
 
 export async function fetchJobsFromPostgres(): Promise<JobRecord[] | null> {
@@ -89,30 +129,20 @@ export async function fetchTransportFromPostgres(): Promise<TransportRecord[] | 
     const res = await p.query(`
       SELECT 
         trip_no AS "tripNo",
-        to_char(date, 'YYYY-MM-DD') AS date,
-        month,
-        year,
+        trip_no AS "transportNo",
         job_no AS "jobNo",
-        service,
-        carrier,
-        truck_type AS "truckType",
-        plate_no AS "plateNo",
+        customer,
         driver,
-        driver_phone AS "driverPhone",
-        from_loc AS "from",
-        to_loc AS "to",
+        truck_type AS "truckType",
+        truck_type AS "container",
+        deliver_date AS "deliverDate",
+        deliver_date AS "deliver",
         status,
-        cost,
-        billing,
-        remark
+        pod
       FROM public.transport_trips
       ORDER BY trip_no ASC;
     `);
-    return res.rows.map((row) => ({
-      ...row,
-      cost: row.cost ? Number(row.cost) : 0,
-      billing: row.billing ? Number(row.billing) : 0,
-    })) as TransportRecord[];
+    return res.rows as TransportRecord[];
   } catch (err) {
     console.warn("[DB] Failed to fetch transport from PostgreSQL:", err);
     return null;
@@ -160,32 +190,267 @@ export async function updateJobInPostgres(
   setClauses.push("updated_at = CURRENT_TIMESTAMP");
   values.push(jobNo);
 
-  const client = await p.connect();
+  const applyUpdate = async (poolInstance: Pool) => {
+    const client = await poolInstance.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `UPDATE public.jobs SET ${setClauses.join(", ")} WHERE job_no = $${paramIdx}`,
+        values
+      );
+
+      for (const [key, val] of Object.entries(patch)) {
+        if (key in fieldMap && key !== "version") {
+          await client.query(
+            `INSERT INTO public.job_history (job_no, field_name, new_value, source_file, changed_at)
+             VALUES ($1, $2, $3, 'web_edit', CURRENT_TIMESTAMP)`,
+            [jobNo, key, String(val ?? "")]
+          );
+        }
+      }
+
+      await client.query("COMMIT");
+      return true;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("[DB] update error:", err);
+      return false;
+    } finally {
+      client.release();
+    }
+  };
+
+  const successCloud = await applyUpdate(p);
+
+  // Best effort sync to local LAN PostgreSQL if reachable
+  const localP = getLocalDbPool();
+  if (localP) {
+    applyUpdate(localP).catch(() => {});
+  }
+
+  return successCloud;
+}
+
+const JOB_COLS = [
+  "id", "job_no", "service", "service_label", "status", "status_detail", "status_raw",
+  "customer", "consignee", "bl", "mbl", "hbl", "join_no", "update_status",
+  "etd", "eta", "job_date", "month", "year",
+  "draft_customs", "advance_doc", "do_released", "customs_filed", "cleared",
+  "draft_date", "customs_date", "do_date", "clear_date", "advance_date",
+  "remark", "source_sheet", "source_row", "running_no", "version",
+  "next_action", "age_days", "flags", "invoice_no", "container_type",
+  "gross_weight", "cbm", "commodity", "cs_name", "data_source"
+];
+
+async function executeJobsUpsertOnPool(poolInstance: Pool, jobs: JobRecord[], chunkSize = 100): Promise<number> {
+  const client: PoolClient = await poolInstance.connect();
+  let totalProcessed = 0;
+
   try {
     await client.query("BEGIN");
-    await client.query(
-      `UPDATE public.jobs SET ${setClauses.join(", ")} WHERE job_no = $${paramIdx}`,
-      values
-    );
 
-    // Audit logs
-    for (const [key, val] of Object.entries(patch)) {
-      if (key in fieldMap && key !== "version") {
-        await client.query(
-          `INSERT INTO public.job_history (job_no, field_name, new_value, source_file, changed_at)
-           VALUES ($1, $2, $3, 'web_edit', CURRENT_TIMESTAMP)`,
-          [jobNo, key, String(val ?? "")]
-        );
+    for (let i = 0; i < jobs.length; i += chunkSize) {
+      const chunk = jobs.slice(i, i + chunkSize);
+      const valueRows: string[] = [];
+      const params: any[] = [];
+      let pIdx = 1;
+
+      for (const j of chunk) {
+        const rowId = j.id || `${j.month || "M"}_${j.sourceRow || (i + 1)}_${j.jobNo || "UNKNOWN"}`;
+        const rowPlaceholders: string[] = [];
+        const rowVals = [
+          rowId,
+          j.jobNo || "UNKNOWN",
+          j.service || "SEA Import",
+          j.serviceLabel || j.service || "SEA Import",
+          j.status || "In Progress",
+          j.statusDetail || "",
+          j.statusRaw || "",
+          j.customer || "",
+          j.consignee || "",
+          j.bl || "",
+          j.mbl || "",
+          j.hbl || "",
+          j.joinNo || "",
+          j.updateStatus || "",
+          sanitizeDate(j.etd),
+          sanitizeDate(j.eta),
+          sanitizeDate(j.jobDate),
+          j.month || "",
+          sanitizeNum(j.year),
+          Boolean(j.draftCustoms),
+          Boolean(j.advanceDoc),
+          Boolean(j.doReleased),
+          Boolean(j.customsFiled),
+          Boolean(j.cleared),
+          sanitizeDate(j.draftDate),
+          sanitizeDate(j.customsDate),
+          sanitizeDate(j.doDate),
+          sanitizeDate(j.clearDate),
+          sanitizeDate(j.advanceDate),
+          j.remark || "",
+          j.sourceSheet || "",
+          sanitizeNum(j.sourceRow),
+          sanitizeNum(j.runningNo),
+          sanitizeNum(j.version) || 1,
+          j.nextAction || "",
+          sanitizeNum(j.ageDays),
+          JSON.stringify(Array.isArray(j.flags) ? j.flags : []),
+          j.invoiceNo || "",
+          j.containerType || "",
+          sanitizeNum(j.grossWeight),
+          sanitizeNum(j.cbm),
+          j.commodity || "",
+          j.csName || "",
+          j.dataSource || "upload"
+        ];
+
+        for (const val of rowVals) {
+          rowPlaceholders.push(`$${pIdx++}`);
+          params.push(val);
+        }
+        valueRows.push(`(${rowPlaceholders.join(", ")})`);
       }
+
+      const updateSet = JOB_COLS
+        .filter((c) => c !== "id")
+        .map((c) => `${c} = EXCLUDED.${c}`)
+        .join(", ") + ", updated_at = CURRENT_TIMESTAMP";
+
+      const query = `
+        INSERT INTO public.jobs (${JOB_COLS.join(", ")})
+        VALUES ${valueRows.join(",\n")}
+        ON CONFLICT (id) DO UPDATE SET
+          ${updateSet};
+      `;
+
+      await client.query(query, params);
+      totalProcessed += chunk.length;
     }
 
     await client.query("COMMIT");
-    return true;
+    return totalProcessed;
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("[DB] updateJobInPostgres error:", err);
-    return false;
+    throw err;
   } finally {
     client.release();
+  }
+}
+
+export async function upsertJobsToPostgres(
+  jobs: JobRecord[]
+): Promise<{ success: boolean; total: number; error?: string }> {
+  if (!jobs || jobs.length === 0) return { success: true, total: 0 };
+  const p = getDbPool();
+  if (!p) return { success: false, total: 0, error: "No DATABASE_URL configured" };
+
+  try {
+    const total = await executeJobsUpsertOnPool(p, jobs);
+    
+    // Also sync to local LAN PostgreSQL if accessible
+    const localP = getLocalDbPool();
+    if (localP) {
+      executeJobsUpsertOnPool(localP, jobs).catch((err) => {
+        console.warn("[DB] Local LAN postgres jobs sync warning:", err?.message);
+      });
+    }
+
+    return { success: true, total };
+  } catch (err: any) {
+    console.error("[DB] upsertJobsToPostgres error:", err);
+    return { success: false, total: 0, error: err?.message || String(err) };
+  }
+}
+
+const TRANSPORT_COLS = [
+  "trip_no", "job_no", "customer", "driver", "truck_type", "deliver_date", "status", "pod"
+];
+
+async function executeTransportUpsertOnPool(poolInstance: Pool, trips: any[], chunkSize = 100): Promise<number> {
+  const client: PoolClient = await poolInstance.connect();
+  let totalProcessed = 0;
+
+  try {
+    await client.query("BEGIN");
+
+    for (let i = 0; i < trips.length; i += chunkSize) {
+      const chunk = trips.slice(i, i + chunkSize);
+      const valueRows: string[] = [];
+      const params: any[] = [];
+      let pIdx = 1;
+
+      for (const t of chunk) {
+        const tripNo = (t.tripNo || t.transportNo || "").trim();
+        if (!tripNo) continue;
+
+        const placeholders: string[] = [];
+        const rowVals = [
+          tripNo,
+          t.jobNo || "",
+          t.customer || "",
+          t.driver || "",
+          t.truckType || t.container || "",
+          t.deliverDate || t.deliver || null,
+          t.status || "",
+          t.pod || ""
+        ];
+
+        for (const v of rowVals) {
+          placeholders.push(`$${pIdx++}`);
+          params.push(v);
+        }
+        valueRows.push(`(${placeholders.join(", ")})`);
+      }
+
+      if (valueRows.length === 0) continue;
+
+      const updateSet = TRANSPORT_COLS
+        .filter((c) => c !== "trip_no")
+        .map((c) => `${c} = EXCLUDED.${c}`)
+        .join(", ") + ", updated_at = CURRENT_TIMESTAMP";
+
+      const query = `
+        INSERT INTO public.transport_trips (${TRANSPORT_COLS.join(", ")})
+        VALUES ${valueRows.join(",\n")}
+        ON CONFLICT (trip_no) DO UPDATE SET
+          ${updateSet};
+      `;
+
+      await client.query(query, params);
+      totalProcessed += valueRows.length;
+    }
+
+    await client.query("COMMIT");
+    return totalProcessed;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function upsertTransportToPostgres(
+  trips: any[]
+): Promise<{ success: boolean; total: number; error?: string }> {
+  if (!trips || trips.length === 0) return { success: true, total: 0 };
+  const p = getDbPool();
+  if (!p) return { success: false, total: 0, error: "No DATABASE_URL configured" };
+
+  try {
+    const total = await executeTransportUpsertOnPool(p, trips);
+
+    const localP = getLocalDbPool();
+    if (localP) {
+      executeTransportUpsertOnPool(localP, trips).catch((err) => {
+        console.warn("[DB] Local LAN postgres transport sync warning:", err?.message);
+      });
+    }
+
+    return { success: true, total };
+  } catch (err: any) {
+    console.error("[DB] upsertTransportToPostgres error:", err);
+    return { success: false, total: 0, error: err?.message || String(err) };
   }
 }

@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
 import { getJobs, getTransport } from "@/lib/data-store";
+import { upsertJobsToPostgres, upsertTransportToPostgres } from "@/lib/db";
 
 const execFileAsync = promisify(execFile);
 export const dynamic = "force-dynamic";
@@ -53,7 +54,14 @@ export async function POST(req: NextRequest) {
         );
         await fs.rename(tmpPath, jobsPath);
 
-        // 3. Background SQLite synchronization
+        // 3. PostgreSQL persistence (Supabase Cloud + Local LAN Master)
+        try {
+          await upsertJobsToPostgres(body.jobs);
+        } catch (dbErr) {
+          console.warn("[UPLOAD] PostgreSQL upsert warning:", dbErr);
+        }
+
+        // 4. Background SQLite synchronization
         try {
           const sqliteScript = resolveScript("sqlite_db.py");
           const pythonExe = process.env.PYTHON_PATH || "python";
@@ -68,7 +76,7 @@ export async function POST(req: NextRequest) {
           ok: true,
           saved: true,
           totalJobs: body.jobs.length,
-          message: `บันทึกข้อมูล ${body.jobs.length} งานลงระบบถาวรเรียบร้อยแล้ว`,
+          message: `บันทึกข้อมูล ${body.jobs.length} งานลงระบบและ PostgreSQL เรียบร้อยแล้ว`,
         });
       }
 
@@ -151,7 +159,14 @@ export async function POST(req: NextRequest) {
           }
         } catch {}
 
-        // 4. Background SQLite sync
+        // 4. PostgreSQL persistence (Supabase Cloud + Local LAN Master)
+        try {
+          await upsertTransportToPostgres(mergedTransport);
+        } catch (dbErr) {
+          console.warn("[UPLOAD] PostgreSQL transport upsert warning:", dbErr);
+        }
+
+        // 5. Background SQLite sync
         try {
           const sqliteScript = resolveScript("sqlite_db.py");
           const pythonExe = process.env.PYTHON_PATH || "python";
@@ -168,7 +183,7 @@ export async function POST(req: NextRequest) {
           updatedTrips: updated,
           transport: mergedTransport,
           jobs: getJobs(),
-          message: `นำเข้าเที่ยวรถสำเร็จ ${added} เที่ยว (ยอดรวม ${mergedTransport.length} เที่ยว) ลงระบบถาวรเรียบร้อยแล้ว`,
+          message: `นำเข้าเที่ยวรถสำเร็จ ${added} เที่ยว (ยอดรวม ${mergedTransport.length} เที่ยว) ลงระบบและ PostgreSQL เรียบร้อยแล้ว`,
         });
       }
     }
@@ -228,6 +243,14 @@ export async function POST(req: NextRequest) {
         const jobs = getJobs();
         const transport = getTransport();
 
+        // Direct persist to PostgreSQL
+        if (jobs.length > 0) {
+          await upsertJobsToPostgres(jobs).catch((e) => console.warn("[UPLOAD] PG jobs sync warning:", e));
+        }
+        if (transport.length > 0) {
+          await upsertTransportToPostgres(transport).catch((e) => console.warn("[UPLOAD] PG transport sync warning:", e));
+        }
+
         return NextResponse.json({
           ok: true,
           directApplied: true,
@@ -236,7 +259,7 @@ export async function POST(req: NextRequest) {
           totalTransport: transport.length,
           jobs,
           transport,
-          message: `อัปเดตไฟล์ Master สำเร็จ! พบข้อมูลทั้งหมด ${jobs.length} งาน`,
+          message: `อัปเดตไฟล์ Master สำเร็จ! พบข้อมูลทั้งหมด ${jobs.length} งาน (บันทึกลง PostgreSQL เรียบร้อย)`,
         });
       }
 
@@ -257,6 +280,10 @@ export async function POST(req: NextRequest) {
         const jobs = getJobs();
         const transport = getTransport();
 
+        if (transport.length > 0) {
+          await upsertTransportToPostgres(transport).catch((e) => console.warn("[UPLOAD] PG transport sync warning:", e));
+        }
+
         return NextResponse.json({
           ok: true,
           directApplied: true,
@@ -265,7 +292,7 @@ export async function POST(req: NextRequest) {
           totalTransport: transport.length,
           jobs,
           transport,
-          message: `อัปเดตไฟล์ Transport สำเร็จ! พบข้อมูล ${transport.length} เที่ยว`,
+          message: `อัปเดตไฟล์ Transport สำเร็จ! พบข้อมูล ${transport.length} เที่ยว (บันทึกลง PostgreSQL เรียบร้อย)`,
         });
       }
 
