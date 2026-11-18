@@ -2,15 +2,21 @@ import sys, os, json, re, datetime
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-JOBS_PATH = os.path.join(BASE_DIR, 'dashboard', 'data', 'jobs.json')
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if not os.path.exists(os.path.join(BASE_DIR, 'package.json')):
+    BASE_DIR = os.path.dirname(BASE_DIR)
+
+JOBS_PATH = os.path.join(BASE_DIR, 'data', 'jobs.json')
+if not os.path.exists(JOBS_PATH):
+    JOBS_PATH = os.path.join(BASE_DIR, 'dashboard', 'data', 'jobs.json')
 
 def load_master_index():
     if not os.path.exists(JOBS_PATH):
         return {}, {}, {}
     try:
         with open(JOBS_PATH, 'r', encoding='utf-8') as f:
-            jobs = json.load(f)
+            raw_data = json.load(f)
+        jobs = raw_data if isinstance(raw_data, list) else raw_data.get('jobs', [])
         by_no = {}
         for j in jobs:
             jno = j.get('jobNo', '').strip().upper()
@@ -420,6 +426,7 @@ def parse_sheet_rows(sheet_name, raw_rows):
     idx_hbl = get_col_idx(["HBL"])
     idx_commodity = get_col_idx(["COMMODITY"])
     idx_ref = get_col_idx(["REFERENCE NO", "REFERANCE NO", "REF NO"])
+    idx_clear = get_col_idx(["CLEAR DATE"])
 
     all_headers_str = " ".join(header_cols)
     sheet_upper = sheet_name.upper()
@@ -463,6 +470,7 @@ def parse_sheet_rows(sheet_name, raw_rows):
         eta_iso = excel_date_to_iso(eta_raw)
         
         st_raw = val(idx_status)
+        clear_iso = excel_date_to_iso(val(idx_clear))
         o409_val = val(idx_o409)
         o309_val = val(idx_o309)
         o209_val = val(idx_o209)
@@ -480,6 +488,22 @@ def parse_sheet_rows(sheet_name, raw_rows):
         elif is_customs and declaration_no and idx_status == -1 and idx_o409 == -1:
             # ไม่มีคอลัมน์สถานะเลย -> อนุมานจากเลขใบขน (ถ้ามีคอลัมน์ STATUS แต่ว่าง = ยังไม่ทราบ ไม่เดาว่า 0409)
             customs_st = "0409"
+
+        # Classify explicit STATUS JOB column (exact parity with standardize_pipeline.py)
+        st_lower = st_raw.lower()
+        has_explicit_status = bool(st_raw)
+        if customs_st == "0409" or "complete" in st_lower or "เสร็จ" in st_lower:
+            parsed_status, parsed_status_detail = "Completed", "Job Complete"
+            if not customs_st:
+                customs_st = "0409"
+        elif "cancel" in st_lower or "ยกเลิก" in st_lower:
+            parsed_status, parsed_status_detail = "Cancelled", "Job Cancelled"
+        elif "wait" in st_lower or "รอ" in st_lower:
+            parsed_status, parsed_status_detail = "In Progress", "Job Waiting"
+        elif "booking" in st_lower:
+            parsed_status, parsed_status_detail = "Booking", "Job Booking"
+        else:
+            parsed_status, parsed_status_detail = "In Progress", "Job Control"
 
         gw_val = None
         try:
@@ -508,7 +532,11 @@ def parse_sheet_rows(sheet_name, raw_rows):
             "declarationNo": declaration_no,
             "invoiceNo": inv_no,
             "referenceNo": val(idx_ref),
-            "status": "Completed" if customs_st == "0409" else "In Progress",
+            "status": parsed_status,
+            "statusDetail": parsed_status_detail,
+            "statusRaw": st_raw or parsed_status_detail,
+            "hasExplicitStatus": has_explicit_status,
+            "clearDate": clear_iso,
             "customsStatus": customs_st,
             "etd": etd_iso,
             "eta": eta_iso,
@@ -524,7 +552,7 @@ def parse_sheet_rows(sheet_name, raw_rows):
             "dateChangeDiff": diff_str,
             "oldEtd": ex_etd,
             "oldEta": ex_eta,
-            "validationStatus": "valid" if (declaration_no or etd_iso or effective_key) else "warning",
+            "validationStatus": "valid" if (declaration_no or etd_iso or eta_iso or effective_key) else "warning",
             "validationNote": (f"🔄 อัปเดตกำหนดการ: {diff_str} (อัปเดตทับงานเดิม ไม่เพิ่มแถว)" if is_date_changed else "⚪ งานเดิมในระบบแล้ว (วันเวลาไม่เปลี่ยน • ข้ามเพื่อไม่ให้งานบวม)") if match else "✨ งานใหม่"
         })
 

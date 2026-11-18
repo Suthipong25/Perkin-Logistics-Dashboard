@@ -206,13 +206,16 @@ def extract_booking(path):
             etd = fix_swapped_date(raw_etd, int(mm))
             eta = fix_swapped_date(raw_eta, int(mm))
 
-            # User Rule: ETD จับ Export, ETA จับ Import
+            # User Rule: ETD จับ Export, ETA จับ Import (reset per row so dates never leak across rows!)
+            row_month = month_key
             if 'Export' in service and etd:
                 job_date = etd
-                month_key = etd[:7]
+                if etd.startswith('2026-'):
+                    row_month = etd[:7]
             elif 'Import' in service and eta:
                 job_date = eta
-                month_key = eta[:7]
+                if eta.startswith('2026-'):
+                    row_month = eta[:7]
 
             jobs.append({
                 "id": f"{sheet}_{r_num}_{job_no}",
@@ -232,7 +235,7 @@ def extract_booking(path):
                 "etd": etd,
                 "eta": eta,
                 "jobDate": job_date,
-                "month": month_key,
+                "month": row_month,
                 "year": 2026,
                 "draftCustoms": done, "advanceDoc": False, "doReleased": done,
                 "customsFiled": done, "cleared": done,
@@ -262,7 +265,9 @@ def extract_daily_ops(path):
         'AIR Import':  {'job': 'D', 'draft': 'H', 'o2': 'I', 'o3': '',  'o4': 'I', 'adv': 'J', 'do': 'L', 'filed': 'M', 'clear': 'N', 'ts': 'Q', 'update': 'V', 'rmk': 'W'},
         'Air Export':  {'job': 'F', 'draft': 'J', 'o2': 'K', 'o3': 'L', 'o4': 'M', 'adv': 'N', 'do': 'P', 'filed': 'Q', 'clear': 'R', 'ts': 'U', 'update': 'Z', 'rmk': 'AA'},
         'SEA Import':  {'job': 'D', 'draft': 'H', 'o2': 'I', 'o3': 'J', 'o4': 'K', 'adv': 'L', 'do': 'N', 'filed': 'O', 'clear': 'P', 'ts': 'S', 'update': 'X', 'rmk': 'Y'},
-        'SEA Export':  {'job': 'G', 'draft': 'K', 'o2': 'L', 'o3': 'M', 'o4': 'N', 'adv': 'O', 'do': 'T', 'filed': 'Q', 'clear': 'S', 'ts': 'X', 'update': 'AD', 'rmk': 'AE'}
+        'SEA Export':  {'job': 'G', 'draft': 'K', 'o2': 'L', 'o3': 'M', 'o4': 'N', 'adv': 'O', 'do': 'T', 'filed': 'Q', 'clear': 'S', 'ts': 'X', 'update': 'AD', 'rmk': 'AE'},
+        ' Freight ':   {'job': 'F', 'draft': 'J', 'o2': 'K', 'o3': 'L', 'o4': 'M', 'adv': 'N', 'do': 'P', 'filed': 'Q', 'clear': 'S', 'ts': 'V', 'update': 'AA', 'rmk': 'AB'},
+        'Freight':     {'job': 'F', 'draft': 'J', 'o2': 'K', 'o3': 'L', 'o4': 'M', 'adv': 'N', 'do': 'P', 'filed': 'Q', 'clear': 'S', 'ts': 'V', 'update': 'AA', 'rmk': 'AB'}
     }
     ops_by_job = {}
     for sheet_name, cfg in SHEET_CFG.items():

@@ -36,6 +36,10 @@ export interface StagingRecord {
   declarationNo?: string;
   invoiceNo?: string;
   status: string;
+  statusDetail?: string;
+  statusRaw?: string;
+  hasExplicitStatus?: boolean;
+  clearDate?: string | null;
   customsStatus?: string | null;
   etd?: string | null;
   eta?: string | null;
@@ -64,11 +68,14 @@ export interface StagingRecord {
   isGenuineNew?: boolean;
   isDateChanged?: boolean;
   isCustomsChanged?: boolean;
+  isStatusChanged?: boolean;
   oldEtd?: string | null;
   oldEta?: string | null;
   oldFlightTime?: string | null;
+  oldStatus?: string | null;
   dateChangeDiff?: string;
   customsChangeDiff?: string;
+  statusChangeDiff?: string;
   validationStatus: "valid" | "warning";
   validationNote?: string;
 }
@@ -160,8 +167,8 @@ export function StagingUploadView({
     if (r.isGenuineNew && r.actionType === "new" && !r.isPastOrOld && !r.isBlankDummy) {
       return true;
     }
-    // Existing jobs may be updated by changed schedules or customs data.
-    if (r.actionType === "update" && (r.isDateChanged || r.isCustomsChanged)) {
+    // Existing jobs may be updated by changed schedules, customs data, or explicit status changes.
+    if (r.actionType === "update" && (r.isDateChanged || r.isCustomsChanged || r.isStatusChanged)) {
       return true;
     }
     return false;
@@ -181,8 +188,8 @@ export function StagingUploadView({
   const toggleSelectRow = (id: string) => {
     const target = stagingData?.find((r) => r.id === id);
         if (target && !isSelectable(target)) {
-      if (target.actionType === "update" && !target.isDateChanged && !target.isCustomsChanged) {
-        showToast("⚪ งานเดิมในระบบแล้ว (วันเวลาไม่เปลี่ยน) • ข้ามเพื่อไม่ให้งานบวม");
+      if (target.actionType === "update" && !target.isDateChanged && !target.isCustomsChanged && !target.isStatusChanged) {
+        showToast("⚪ งานเดิมในระบบแล้ว (วันเวลาและสถานะไม่เปลี่ยน) • ข้ามเพื่อไม่ให้งานบวม");
       } else if (target.isPastOrOld) {
         showToast("🛡️ ล็อคงานเก่า: ข้อมูลก่อน พ.ย. 2026 เพื่อไม่ให้จำนวนงานเดิมบวม");
       } else {
@@ -264,9 +271,6 @@ export function StagingUploadView({
           map.set("SH" + jjoin, j);
         }
       }
-      if (j.bl) map.set(j.bl.trim().toUpperCase(), j);
-      if (j.hbl) map.set(j.hbl.trim().toUpperCase(), j);
-      if (j.mbl) map.set(j.mbl.trim().toUpperCase(), j);
     }
     return map;
   }, [jobs]);
@@ -392,7 +396,8 @@ export function StagingUploadView({
         const gwVal = idxGW !== -1 && cols[idxGW] ? parseFloat(cols[idxGW]) : null;
         const cbmVal = idxCBM !== -1 && cols[idxCBM] ? parseFloat(cols[idxCBM]) : null;
 
-        const opDate = etd || submitDate || eta || "";
+        const isExpJob = /^(SH)?(SE|AE)/i.test(effectiveKey);
+        const opDate = isExpJob ? (etd || submitDate || eta || "") : (eta || submitDate || etd || "");
         const isPastOrOld = !existsInMaster && Boolean(opDate && opDate < "2026-11-01");
         const isBlankDummy = !existsInMaster && !clean(cols[idxCntr]) && isNaN(gwVal as number) && !clean(cols[idxMBL]) && !clean(cols[idxCommodity]);
         const isGenuineNew = !existsInMaster && !isPastOrOld && !isBlankDummy;
@@ -597,6 +602,10 @@ export function StagingUploadView({
         invoiceNo?: string;
         referenceNo?: string;
         status?: string;
+        statusDetail?: string;
+        statusRaw?: string;
+        hasExplicitStatus?: boolean;
+        clearDate?: string | null;
         customsStatus?: string | null;
         etd?: string | null;
         eta?: string | null;
@@ -631,8 +640,11 @@ export function StagingUploadView({
         const existing = existingJobMap.get(effectiveKey);
         const existsInMaster = Boolean(existing);
         
-        // Smart Guard based on 2026 Booking Reports rules taught by user:
-        const opDate = r.etd || r.submitDate || r.eta || "";
+        // Business Rule: Export uses ETD, Import uses ETA (so Oct-ETD / Nov-ETA Import jobs belong to Nov!)
+        const isExportJob = /^(SH)?(SE|AE)/i.test(effectiveKey);
+        const opDate = isExportJob
+          ? (r.etd || r.submitDate || r.eta || "")
+          : (r.eta || r.submitDate || r.etd || "");
         const isPastOrOld = !existsInMaster && Boolean(opDate && opDate < "2026-11-01");
         const isBlankDummy = !existsInMaster && !r.containerType && !r.grossWeight && !r.bl && !r.commodity;
         const isGenuineNew = !existsInMaster && !isPastOrOld && !isBlankDummy;
@@ -679,15 +691,30 @@ export function StagingUploadView({
         const isCustomsChanged = existsInMaster && customsDiffs.length > 0;
         const customsChangeDiff = customsDiffs.join(" • ");
 
+        // Explicit STATUS JOB change detection (e.g. Shipping report Job Control -> Job Complete)
+        const incStatus = r.status || "";
+        const incStatusDetail = r.statusDetail || "";
+        const exStatus = existing?.status || "";
+        const exStatusDetail = existing?.statusDetail || "";
+        const isStatusChanged = Boolean(
+          existsInMaster &&
+          r.hasExplicitStatus &&
+          incStatus &&
+          (incStatus !== exStatus || (incStatusDetail && incStatusDetail !== exStatusDetail))
+        );
+        const statusChangeDiff = isStatusChanged
+          ? `สถานะ: ${exStatusDetail || exStatus || "-"} ➔ ${incStatusDetail || incStatus}`
+          : "";
+
         let note = r.validationNote || (!effectiveKey ? "ไม่มีเลข Job No" : undefined);
-        let vStatus: "valid" | "warning" = (r.declarationNo || r.etd || effectiveKey ? "valid" : "warning");
+        let vStatus: "valid" | "warning" = (r.declarationNo || r.etd || r.eta || effectiveKey ? "valid" : "warning");
 
         if (existsInMaster) {
-          if (isDateChanged || isCustomsChanged) {
+          if (isDateChanged || isCustomsChanged || isStatusChanged) {
             vStatus = "valid";
-            note = `🔄 อัปเดต: ${[dateChangeDiff, customsChangeDiff].filter(Boolean).join(" • ")} (อัปเดตทับงานเดิม ไม่เพิ่มแถวใหม่)`;
+            note = `🔄 อัปเดต: ${[statusChangeDiff, dateChangeDiff, customsChangeDiff].filter(Boolean).join(" • ")} (อัปเดตทับงานเดิม ไม่เพิ่มแถวใหม่)`;
           } else {
-            note = "⚪ งานเดิมในระบบแล้ว (ไม่มีข้อมูลใบขนหรือกำหนดการเปลี่ยนแปลง)";
+            note = "⚪ งานเดิมในระบบแล้ว (ไม่มีข้อมูลใบขน สถานะ หรือกำหนดการเปลี่ยนแปลง)";
           }
         } else {
           if (isPastOrOld) {
@@ -714,6 +741,10 @@ export function StagingUploadView({
               : undefined,
           invoiceNo: r.invoiceNo || undefined,
           status: r.status || (r.customsStatus === "0409" ? "Completed" : "In Progress"),
+          statusDetail: r.statusDetail || undefined,
+          statusRaw: r.statusRaw || undefined,
+          hasExplicitStatus: Boolean(r.hasExplicitStatus),
+          clearDate: r.clearDate || null,
           customsStatus: r.customsStatus || null,
           etd: r.etd || (isCustomsFile ? null : r.submitDate) || null,
           eta: r.eta || null,
@@ -742,6 +773,9 @@ export function StagingUploadView({
           isGenuineNew,
           isDateChanged,
           isCustomsChanged,
+          isStatusChanged,
+          oldStatus: exStatusDetail || exStatus || null,
+          statusChangeDiff,
           customsChangeDiff,
           oldEtd: exEtd || null,
           oldEta: exEta || null,
@@ -835,31 +869,40 @@ export function StagingUploadView({
         if (jjn.startsWith("SH")) jobIndexMap.set(jjn.slice(2), idx);
         else jobIndexMap.set("SH" + jjn, idx);
       }
-      if (j.bl) jobIndexMap.set(j.bl.trim().toUpperCase(), idx);
-      if (j.hbl) jobIndexMap.set(j.hbl.trim().toUpperCase(), idx);
-      if (j.mbl) jobIndexMap.set(j.mbl.trim().toUpperCase(), idx);
     });
 
     for (const stg of recordsToApply) {
       const stgKey = stg.jobNo.trim().toUpperCase();
       const stgJoin = (stg.joinNo || "").trim().toUpperCase().replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
-      const stgBl = (stg.bl || "").trim().toUpperCase();
 
-      const existingIdx = jobIndexMap.get(stgKey) ?? (stgJoin ? jobIndexMap.get(stgJoin) : undefined) ?? (stgBl ? jobIndexMap.get(stgBl) : undefined);
+      const existingIdx = jobIndexMap.get(stgKey) ?? (stgJoin ? jobIndexMap.get(stgJoin) : undefined);
 
       // 1. Existing Job Match
       if (existingIdx !== undefined) {
-        if (stg.isDateChanged || stg.isCustomsChanged) {
+        if (stg.isDateChanged || stg.isCustomsChanged || stg.isStatusChanged) {
           // UPDATE IN PLACE (Anti-Bloat: in-place update on existing job, no new rows added!)
           const target = { ...updatedJobsList[existingIdx] };
           if (stg.etd) target.etd = stg.etd;
           if (stg.eta) target.eta = stg.eta;
+          if (stg.clearDate) target.clearDate = stg.clearDate;
           if (stg.flightTime) target.flightTime = stg.flightTime;
           if (stg.vessel) target.vessel = stg.vessel;
           if (stg.feeder) target.feeder = stg.feeder;
           if (stg.flightNo) target.flightNo = stg.flightNo;
           if (stg.carrier && !target.carrier) target.carrier = stg.carrier;
           if (stg.bl && !target.bl) target.bl = stg.bl;
+          if (stg.isStatusChanged && stg.hasExplicitStatus && stg.status) {
+            target.status = stg.status as JobRecord["status"];
+            if (stg.statusDetail) target.statusDetail = stg.statusDetail;
+            if (stg.statusRaw) target.statusRaw = stg.statusRaw;
+            if (stg.status === "Completed") {
+              target.cleared = true;
+              target.doReleased = true;
+              target.draftCustoms = true;
+              target.customsFiled = true;
+              target.nextAction = "นำส่งสินค้าเรียบร้อย";
+            }
+          }
           // Update declaration numbers independently of status; only advance status, never downgrade.
           if (stg.fileType === "customs") {
             if (stg.declarationNo) {
@@ -900,8 +943,15 @@ export function StagingUploadView({
         continue;
       }
 
-      // 2. Lock old past jobs (< 2026-11-01)
-      const opDate = stg.etd || stg.submitDate || stg.eta || "";
+      // 2. Lock old past jobs (< 2026-11-01) using Export=ETD, Import=ETA rule
+      const isExp =
+        stg.jobNo.startsWith("SE") ||
+        stg.jobNo.startsWith("SHSE") ||
+        stg.jobNo.startsWith("AE") ||
+        stg.jobNo.startsWith("SHAE");
+      const opDate = isExp
+        ? (stg.etd || stg.submitDate || stg.eta || "")
+        : (stg.eta || stg.submitDate || stg.etd || "");
       if (opDate && opDate < "2026-11-01") {
         blockedOld++;
         continue;
@@ -914,11 +964,6 @@ export function StagingUploadView({
 
       // 4. Genuine New Job -> push new row
       applyNew++;
-      const isExp =
-        stg.jobNo.startsWith("SE") ||
-        stg.jobNo.startsWith("SHSE") ||
-        stg.jobNo.startsWith("AE") ||
-        stg.jobNo.startsWith("SHAE");
       const svc = (
         stg.jobNo.startsWith("SI") || stg.jobNo.startsWith("SHSI")
           ? "SEA Import"
@@ -928,22 +973,42 @@ export function StagingUploadView({
           ? "AIR Import"
           : stg.jobNo.startsWith("AE") || stg.jobNo.startsWith("SHAE")
           ? "AIR Export"
+          : stg.jobNo.startsWith("TS") || stg.jobNo.startsWith("SHT")
+          ? "Transport"
           : "Freight"
       ) as JobRecord["service"];
 
       const finalOpDate = isExp
-        ? stg.etd || stg.submitDate
+        ? stg.etd || stg.submitDate || stg.eta
         : stg.eta || stg.submitDate || stg.etd;
       const opMonth = finalOpDate ? finalOpDate.slice(0, 7) : "2026-11";
+      const resolvedStatus = (
+        stg.hasExplicitStatus && stg.status
+          ? stg.status
+          : stg.customsStatus === "0409"
+          ? "Completed"
+          : "In Progress"
+      ) as JobRecord["status"];
+      const resolvedDetail =
+        stg.statusDetail ||
+        (resolvedStatus === "Completed"
+          ? "Job Complete"
+          : resolvedStatus === "Booking"
+          ? "Job Booking"
+          : resolvedStatus === "Cancelled"
+          ? "Job Cancelled"
+          : "Job Control");
+      const isDone = resolvedStatus === "Completed";
 
       updatedJobsList.push({
+        id: `Upload_${opMonth}_${stg.jobNo}`,
         jobNo: stg.jobNo,
         joinNo: stg.joinNo || undefined,
         service: svc,
         serviceLabel: svc,
-        status: (stg.customsStatus === "0409" ? "Completed" : "In Progress") as JobRecord["status"],
-        statusDetail: stg.customsStatus === "0409" ? "Job Complete" : "Job Control",
-        statusRaw: "From Upload (New)",
+        status: resolvedStatus,
+        statusDetail: resolvedDetail,
+        statusRaw: stg.statusRaw || resolvedDetail,
         customer: stg.customer,
         consignee: "",
         bl: stg.bl || "",
@@ -956,24 +1021,24 @@ export function StagingUploadView({
         ageDays: null,
         flags: [],
         jobDate: finalOpDate || null,
-        draftCustoms: true,
-        customsFiled: Boolean(stg.declarationNo),
-        doReleased: stg.customsStatus === "0409",
-        cleared: stg.customsStatus === "0409",
+        draftCustoms: isDone,
+        customsFiled: isDone || Boolean(stg.declarationNo),
+        doReleased: isDone,
+        cleared: isDone,
         advanceDoc: false,
         draftDate: null,
         customsDate: stg.fileType === "customs" ? stg.submitDate || null : null,
         doDate: null,
-        clearDate: null,
+        clearDate: stg.clearDate || null,
         advanceDate: null,
         sourceRow: updatedJobsList.length + 1,
-        customsStatus: stg.customsStatus || "0109",
+        customsStatus: stg.customsStatus || (isDone ? "0409" : "0109"),
         csName: stg.csName || "",
         containerType: stg.containerType || undefined,
         grossWeight: stg.grossWeight ?? undefined,
         cbm: stg.cbm ?? undefined,
         commodity: stg.commodity || undefined,
-        nextAction: stg.customsStatus === "0409" ? "นำส่งสินค้าเรียบร้อย" : "ตรวจปล่อยสินค้า",
+        nextAction: isDone ? "นำส่งสินค้าเรียบร้อย" : "ตรวจปล่อยสินค้า",
       });
 
       const newIdx = updatedJobsList.length - 1;
@@ -1182,7 +1247,7 @@ export function StagingUploadView({
     [stagingData]
   );
   const countDateUpdates = useMemo(
-    () => stagingData?.filter((r) => r.actionType === "update" && r.isDateChanged).length || 0,
+    () => stagingData?.filter((r) => r.actionType === "update" && (r.isDateChanged || r.isStatusChanged)).length || 0,
     [stagingData]
   );
   const countCustomsUpdates = useMemo(
@@ -1190,7 +1255,7 @@ export function StagingUploadView({
     [stagingData]
   );
   const countUnchanged = useMemo(
-    () => stagingData?.filter((r) => r.actionType === "update" && !r.isDateChanged && !r.isCustomsChanged).length || 0,
+    () => stagingData?.filter((r) => r.actionType === "update" && !r.isDateChanged && !r.isCustomsChanged && !r.isStatusChanged).length || 0,
     [stagingData]
   );
   const countLockedOld = useMemo(
@@ -1205,7 +1270,7 @@ export function StagingUploadView({
     [stagingData, selectedIds]
   );
   const selDateUpdateCount = useMemo(
-    () => stagingData?.filter((r) => selectedIds.has(r.id) && r.actionType === "update" && r.isDateChanged).length || 0,
+    () => stagingData?.filter((r) => selectedIds.has(r.id) && r.actionType === "update" && (r.isDateChanged || r.isStatusChanged)).length || 0,
     [stagingData, selectedIds]
   );
   const selCustomsUpdateCount = useMemo(
@@ -1215,14 +1280,14 @@ export function StagingUploadView({
   const countActionable =
     countGenuineNew +
     (stagingData?.filter(
-      (r) => r.actionType === "update" && (r.isDateChanged || r.isCustomsChanged)
+      (r) => r.actionType === "update" && (r.isDateChanged || r.isCustomsChanged || r.isStatusChanged)
     ).length || 0);
   const selUpdateCount =
     stagingData?.filter(
       (r) =>
         selectedIds.has(r.id) &&
         r.actionType === "update" &&
-        (r.isDateChanged || r.isCustomsChanged)
+        (r.isDateChanged || r.isCustomsChanged || r.isStatusChanged)
     ).length || 0;
 
   const filteredStaging = useMemo(() => {
@@ -1231,11 +1296,11 @@ export function StagingUploadView({
     if (previewFilter === "new") {
       list = list.filter((r) => r.isGenuineNew && r.actionType === "new");
     } else if (previewFilter === "date_updates") {
-      list = list.filter((r) => r.actionType === "update" && r.isDateChanged);
+      list = list.filter((r) => r.actionType === "update" && (r.isDateChanged || r.isStatusChanged));
     } else if (previewFilter === "customs_updates") {
       list = list.filter((r) => r.actionType === "update" && r.isCustomsChanged);
     } else if (previewFilter === "unchanged") {
-      list = list.filter((r) => r.actionType === "update" && !r.isDateChanged && !r.isCustomsChanged);
+      list = list.filter((r) => r.actionType === "update" && !r.isDateChanged && !r.isCustomsChanged && !r.isStatusChanged);
     } else if (previewFilter === "locked_old") {
       list = list.filter((r) => (r.isPastOrOld || r.isBlankDummy) && r.actionType === "new");
     }
