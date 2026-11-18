@@ -1,3 +1,25 @@
+/**
+ * ============================================================================
+ * API Route: POST /api/uploads
+ * ============================================================================
+ * รองรับการทำงาน 3 รูปแบบหลัก:
+ *   1. JSON { action: "apply", deltaJobs | jobs }
+ *      - บันทึกงานใหม่/งานที่อัปเดตลง Supabase PostgreSQL เป็นหลัก (รับ deltaJobs เฉพาะรายการที่เปลี่ยน
+ *        เพื่อลดขนาด Payload จาก ~4 MB เหลือไม่กี่ KB ไม่ชน Limit 4.5 MB ของ Vercel)
+ *      - หากไม่ได้รันบน Vercel (!IS_VERCEL) จะเขียน mirror ลง data/jobs.json + backup + SQLite ด้วย
+ *
+ *   2. JSON { action: "apply_transport", trips }
+ *      - รวม (merge) เที่ยวรถขนส่งใหม่/ที่แก้ไขเข้ากับรายการเดิม และ upsert ลง Supabase PostgreSQL
+ *      - หากรันบน Local จะ mirror ลง data/transport.json และเติม transportNo กลับไปที่ jobs.json
+ *
+ *   3. multipart/form-data (อัปโหลดไฟล์ Excel / CSV)
+ *      - Master Workbook ขนาดใหญ่ (2026 Booking Report.xlsx / JOB_Daily*.xlsx):
+ *        ทำงานบน Local เท่านั้น (ใช้ os.tmpdir() + standardize_pipeline.py -> PostgreSQL)
+ *      - รายงานประจำวัน/รายแผนก (Shipping, Oversea, Air Freight, Transport, Customs):
+ *        อ่านจาก Buffer ใน Memory ด้วย parseUploadedExcelBuffer() (Node.js ล้วน ไม่เขียน /var/task
+ *        และไม่เรียก Python -> ใช้งานได้ 100% ทั้งบน Vercel Production และ Local)
+ * ============================================================================
+ */
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { promisify } from "util";
@@ -18,6 +40,7 @@ import { JobRecord, TransportRecord } from "@/types/dashboard";
 const execFileAsync = promisify(execFile);
 export const dynamic = "force-dynamic";
 
+// ตรวจสภาพแวดล้อม Vercel Serverless (Filesystem ใน /var/task เป็น Read-Only ห้ามเขียนไฟล์และไม่มี Python)
 const IS_VERCEL = Boolean(process.env.VERCEL);
 
 function resolveScript(name: string): string {
@@ -34,12 +57,17 @@ function resolveBackupDir(): string {
   return local;
 }
 
+/**
+ * ดึงข้อมูลงานปัจจุบันจาก Supabase PostgreSQL เป็นหลัก (Source of Truth)
+ * เพื่อให้การเทียบงานซ้ำ/วันเวลาเปลี่ยนบน Vercel เป็นข้อมูลสดล่าสุดเสมอ ไม่ค้างอยู่ที่ jobs.json ตอน Build
+ */
 async function getCurrentJobs(): Promise<JobRecord[]> {
   const pgJobs = await fetchJobsFromPostgres();
   if (pgJobs && pgJobs.length > 0) return pgJobs;
   return getJobs();
 }
 
+/** ดึงข้อมูลเที่ยวรถปัจจุบันจาก Supabase PostgreSQL เป็นหลัก (fallback เป็น transport.json) */
 async function getCurrentTransport(): Promise<TransportRecord[]> {
   const pgTransport = await fetchTransportFromPostgres();
   if (pgTransport && pgTransport.length > 0) return pgTransport;
@@ -57,6 +85,7 @@ export async function POST(req: NextRequest) {
         body.action === "apply" &&
         (Array.isArray(body.deltaJobs) || Array.isArray(body.jobs))
       ) {
+        // รองรับทั้ง deltaJobs (ส่งมาเฉพาะรายการที่เพิ่ม/เปลี่ยน -> เร็วและเล็ก) และ jobs (เต็มชุดสำหรับ backward compatibility)
         const deltaJobs: JobRecord[] | null = Array.isArray(body.deltaJobs)
           ? body.deltaJobs
           : null;
@@ -65,7 +94,7 @@ export async function POST(req: NextRequest) {
           : null;
         const jobsToUpsert = deltaJobs ?? fullJobs ?? [];
 
-        // 1. PostgreSQL persistence (Supabase Cloud + Local LAN Master)
+        // 1. บันทึกลง PostgreSQL ก่อนเสมอ (บน Vercel หาก DB ล้มเหลวต้องคืน 500 เพื่อไม่ให้แจ้งผู้ใช้ว่าบันทึกสำเร็จปลอมๆ)
         const pgResult = await upsertJobsToPostgres(jobsToUpsert);
         if (!pgResult.success && IS_VERCEL) {
           return NextResponse.json(
@@ -291,6 +320,7 @@ export async function POST(req: NextRequest) {
       const buffer = Buffer.from(bytes);
       const fileNameLower = file.name.toLowerCase();
 
+      // แยกประเภทไฟล์ Master ขนาดใหญ่ (ต้องเป็น .xlsx เท่านั้น เพื่อไม่ให้ไฟล์รายวัน .xls ที่มีคำว่า booking/transport โดนจับผิด)
       const isBookingMaster =
         fileNameLower.endsWith(".xlsx") &&
         (fileNameLower.includes("booking report") ||

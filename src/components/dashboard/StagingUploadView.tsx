@@ -841,6 +841,7 @@ export function StagingUploadView({
     }
 
     const updatedJobsList = [...jobs];
+    // เก็บเฉพาะงานที่เพิ่มใหม่หรือแก้ไขจริง (deltaJobs) เพื่อส่งให้ /api/uploads แทนการส่งทั้ง 3,600+ งาน (~4 MB)
     const changedJobs: JobRecord[] = [];
     let applyNew = 0;
     let dateUpdatedCount = 0;
@@ -935,7 +936,8 @@ export function StagingUploadView({
         continue;
       }
 
-      // 2. Lock old past jobs (< 2026-11-01) using Export=ETD, Import=ETA rule
+      // 2. ล็อคงานงวดเก่าก่อน พ.ย. 2026 ไม่ให้เพิ่มแถวใหม่ซ้ำซ้อน (ใช้กฎ Export = ETD, Import = ETA)
+      //    เช่น งานนำเข้าที่ ETD ต.ค. แต่ ETA พ.ย. ต้องใช้วัน ETA (พ.ย.) จึงจะไม่โดนล็อคผิดพลาด
       const isExp =
         stg.jobNo.startsWith("SE") ||
         stg.jobNo.startsWith("SHSE") ||
@@ -1048,6 +1050,8 @@ export function StagingUploadView({
     }
 
     try {
+      // ส่งเฉพาะ deltaJobs (รายการที่เปลี่ยน/เพิ่มใหม่จริง) ไปให้ Backend upsert ลง PostgreSQL
+      // เพื่อให้เร็ว (<300ms) และไม่ชนขีดจำกัด Request Body 4.5 MB ของ Vercel Serverless
       const response = await fetch("/api/uploads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

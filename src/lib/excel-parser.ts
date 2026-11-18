@@ -1,8 +1,34 @@
+/**
+ * ============================================================================
+ * Pure Node.js / TypeScript Excel & HTML-XLS Parser (In-Memory)
+ * ============================================================================
+ * หน้าที่หลัก:
+ *   อ่านไฟล์รายงานจากแต่ละแผนก (.xls, .xlsx, .csv, และ .xls ที่ข้างในเป็น HTML จาก e-Customs)
+ *   จาก Buffer ใน Memory โดยตรง เพื่อให้ทำงานได้ 100% ทั้งบน Vercel Serverless (ที่ห้ามเขียนไฟล์ลง /var/task
+ *   และไม่มี Python) และบนเครื่อง Local
+ *
+ * โครงสร้างรายงานที่รองรับ (ตรวจจับอัตโนมัติจาก Header 4 บรรทัดแรก):
+ *   1. Inland Transport (examination_delivery.xls) -> แยกเข้าตารางเที่ยวรถ (TS...)
+ *   2. Sea Oversea FWD 2-row (receiptreport Sea)   -> 1 งานใช้ 2 แถว (แถวบน ETD/HBL, แถวล่าง ETA/MBL)
+ *   3. Air Freight FWD 2-row (reportexport Air)    -> 1 งานใช้ 2 แถว (แถวบน Flight/HAWB, แถวล่าง Time/ETA/MAWB)
+ *   4. Standard 1-row (Shipping / e-Customs)       -> 1 งานใช้ 1 แถว (รองรับ STATUS JOB, CLEAR DATE, 0109-0409)
+ *
+ * กฎข้อมูลสำคัญ (Business Rules):
+ *   - ห้ามตัดหรือเติม prefix "SH" เมื่อจับคู่เลขงาน (SHSI26110009 != SI26110009 เป็นคนละลำดับเลขแผนก
+ *     ต้องผูกผ่าน exact jobNo หรือ joinNo เท่านั้น)
+ *   - แปลงภาษาไทยเพี้ยน (ISO-8859-1 -> Windows-874) อัตโนมัติสำหรับไฟล์ .xls เก่าจากโปรแกรมบัญชี/ขนส่ง
+ * ============================================================================
+ */
 import * as XLSX from "xlsx";
 import { JobRecord } from "@/types/dashboard";
 
 const thaiDecoder = new TextDecoder("windows-874");
 
+/**
+ * แก้ปัญหาภาษาไทยต่างดาว (Mojibake) จากไฟล์ .xls รุ่นเก่าที่เก็บอักขระแบบ CP874/Windows-874
+ * แต่ถูกอ่านมาเป็น Latin-1 (เช่น "ä»ÃÑº" -> "ไปรับ")
+ * จะแปลงเฉพาะเมื่อทุกตัวอักษรอยู่ในช่วง 0-255 และเมื่อ decode ด้วย windows-874 แล้วพบอักษรไทยจริง
+ */
 function fixThaiEncoding(s: string): string {
   if (!s) return s;
   const bytes = new Uint8Array(s.length);
@@ -34,6 +60,14 @@ function cleanText(v: unknown): string {
   return str.replace(/[\t\u00a0]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * แปลงค่าวันที่ทุกรูปแบบจาก Excel ให้เป็นมาตรฐาน ISO "YYYY-MM-DD"
+ * รองรับ:
+ *  - JS Date object
+ *  - Excel Serial Number (เช่น 46334 -> นับจาก 1899-12-30)
+ *  - ISO string ("2026-11-09...")
+ *  - รูปแบบไทย/ยุโรป DD/MM/YYYY หรือ DD-MM-YY (รองรับ พ.ศ. > 2400 โดยลบ 543 อัตโนมัติ)
+ */
 function excelDateToIso(val: unknown): string | null {
   if (val === null || val === undefined || val === "") return null;
   if (val instanceof Date && !isNaN(val.getTime())) {
@@ -79,6 +113,15 @@ interface MasterIndex {
   byBl: Map<string, JobRecord>;
 }
 
+/**
+ * สร้างดัชนีค้นหางานเดิมที่มีอยู่ในระบบ (จาก PostgreSQL/JSON) เพื่อตรวจว่าแถวที่อัปโหลดมาเป็น:
+ *  - งานใหม่ ("new") หรือ
+ *  - งานเดิม ("update") ที่ต้องเทียบว่าวัน ETD/ETA/เวลา เปลี่ยนหรือไม่
+ *
+ * หมายเหตุสำคัญ:
+ *  - จับคู่แบบตรงตัว (exact match) เฉพาะ jobNo, joinNo (ตัด "(SEA)"/"(AIR)" ท้ายคำออก), และ hbl
+ *  - ห้ามตัด "SH" ออกจาก SHSI/SHSE/SHAI เพราะ Shipping และ Oversea รันเลขคนละชุดกัน
+ */
 function buildMasterIndex(jobs: JobRecord[]): MasterIndex {
   const byNo = new Map<string, JobRecord>();
   const byJoin = new Map<string, JobRecord>();
@@ -102,6 +145,10 @@ function buildMasterIndex(jobs: JobRecord[]): MasterIndex {
   return { byNo, byJoin, byBl };
 }
 
+/**
+ * เทียบวันกำหนดการ (ETD, ETA, Flight Time) ระหว่างไฟล์ที่อัปโหลดเข้ามากับงานเดิมในระบบ
+ * ใช้ป้องกัน "งานบวม" (Anti-Bloat): ถ้าวันเวลาไม่เปลี่ยน ระบบจะติ๊กข้ามให้อัตโนมัติ
+ */
 function checkDateDiff(
   incomingEtd: string | null,
   incomingEta: string | null,
@@ -147,10 +194,18 @@ function checkDateDiff(
   };
 }
 
+/**
+ * ตัด tag โหมดการขนส่งท้ายเลขงาน เช่น "SI26100024 (SEA)" -> "SI26100024"
+ */
 function stripModeSuffix(val: string): string {
   return val.replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim().toUpperCase();
 }
 
+/**
+ * รูปแบบที่ 2: รายงาน Sea Oversea FWD แบบ 2 แถวต่อ 1 งาน (เช่น receiptreport_(17).xls)
+ *  - แถวบน (row1): No., ETD, Carrier, Agent, Booking, Job No (SI/SE), HBL, Liner Booking, Local Customer, POL, Commodity
+ *  - แถวล่าง (row2): ETA, Job Date, MBL, Oversea Customer, Feeder/Vessel, POD, CS Name
+ */
 function parseFwdSea2Row(rawRows: string[][], idx: MasterIndex) {
   const rows: Record<string, unknown>[] = [];
   let r = 3;
@@ -247,6 +302,11 @@ function parseFwdSea2Row(rawRows: string[][], idx: MasterIndex) {
   return rows;
 }
 
+/**
+ * รูปแบบที่ 3: รายงาน Air Freight FWD แบบ 2 แถวต่อ 1 งาน (เช่น reportexport_(6).xls)
+ *  - แถวบน (row1): No., Job No (AI/AE), Shipper, Agent, HAWB, Flight, POD, Gross Weight, CS Name
+ *  - แถวล่าง (row2): Job Date, Consignee, MAWB, Flight Time, ETA
+ */
 function parseFwdAir2Row(rawRows: string[][], idx: MasterIndex) {
   const rows: Record<string, unknown>[] = [];
   let r = 2;
@@ -342,6 +402,12 @@ function parseFwdAir2Row(rawRows: string[][], idx: MasterIndex) {
   return rows;
 }
 
+/**
+ * รูปแบบที่ 1: รายงานรถขนส่งในประเทศ Inland Transport (เช่น examination_delivery.xls)
+ *  - เลขเที่ยวรถ (TS...) จะอยู่คอลัมน์ 3 หรือคอลัมน์ 2 (กรณีขนส่งทั่วไปไม่ผูก Job หลัก)
+ *  - ถ้าคอลัมน์ 2 ไม่ใช่ TS... ให้ถือเป็นเลข Job หลักที่ผูกกับเที่ยวรถนี้ (linkedJob)
+ *  - สถานะเบื้องต้น: ถ้าวันส่งมอบ (deliverDate) น้อยกว่าวันนี้ -> "ส่งมอบแล้ว", นอกนั้น -> "กำลังวิ่ง"
+ */
 function parseTransportRows(rawRows: string[][]) {
   const trips: Record<string, unknown>[] = [];
   let headerIdx = -1;
@@ -414,6 +480,14 @@ function parseTransportRows(rawRows: string[][]) {
   return trips;
 }
 
+/**
+ * ตัวคัดแยกประเภทชีต (Dispatcher):
+ * ตรวจสอบข้อความใน 4 แถวแรกเพื่อส่งต่อไปยัง Parser ที่ตรงกับรูปแบบไฟล์:
+ *   1) Transport  -> parseTransportRows
+ *   2) Sea 2-row  -> parseFwdSea2Row
+ *   3) Air 2-row  -> parseFwdAir2Row
+ *   4) Default    -> Standard 1-row (Shipping / e-Customs) ค้นหาคอลัมน์อัตโนมัติจากชื่อหัวตาราง
+ */
 function parseSheetRows(
   sheetName: string,
   rawRows: string[][],
@@ -591,6 +665,8 @@ function parseSheetRows(
       customsSt = "0409";
     }
 
+    // แปลงสถานะจากคอลัมน์ STATUS JOB และรหัสใบขน (0109-0409) ให้ตรงกับมาตรฐาน Dashboard
+    // hasExplicitStatus = true เมื่อไฟล์มีคอลัมน์ STATUS JOB จริง (เพื่อให้ StagingUploadView ยอมอัปเดตสถานะทับได้)
     const stLower = stRaw.toLowerCase();
     const hasExplicitStatus = Boolean(stRaw);
     let parsedStatus = "In Progress";
@@ -690,6 +766,11 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
 
+/**
+ * อ่านไฟล์ .xls ที่เนื้อหาข้างในจริงๆ เป็น HTML (เช่น รายงานใบขนจากระบบ e-Customs Report Designer)
+ * - ตรวจ charset จาก <meta> เพื่อรองรับ tis-620 / windows-874
+ * - ลบ HTML comment และ <script>/<style> ก่อนแยกแต่ละ <table> เป็น 1 ชีต
+ */
 function readHtmlTablesFromBuffer(buffer: Buffer): Array<[string, string[][]]> {
   const headText = buffer.subarray(0, 5000).toString("latin1");
   const charsetMatch = headText.match(/charset=["']?([\w-]+)/i);
@@ -780,6 +861,11 @@ export interface ParsedUploadResult {
   message?: string;
 }
 
+/**
+ * Entry Point หลักสำหรับเรียกจาก /api/uploads
+ * รับ Buffer ของไฟล์ที่อัปโหลด + ชื่อไฟล์ + รายการงานล่าสุดจาก DB เพื่อวิเคราะห์และคืนผล Preview
+ * (ไม่เขียนไฟล์ลงดิสก์เลย จึงปลอดภัย 100% บน Vercel Serverless)
+ */
 export function parseUploadedExcelBuffer(
   buffer: Buffer,
   fileName: string,
