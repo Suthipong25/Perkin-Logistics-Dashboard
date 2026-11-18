@@ -841,6 +841,7 @@ export function StagingUploadView({
     }
 
     const updatedJobsList = [...jobs];
+    const changedJobs: JobRecord[] = [];
     let applyNew = 0;
     let dateUpdatedCount = 0;
     let skippedDuplicates = 0;
@@ -926,6 +927,7 @@ export function StagingUploadView({
             target.nextAction = "นำส่งสินค้าเรียบร้อย";
           }
           updatedJobsList[existingIdx] = target;
+          changedJobs.push(target);
           dateUpdatedCount++;
         } else {
           skippedDuplicates++;
@@ -990,7 +992,7 @@ export function StagingUploadView({
           : "Job Control");
       const isDone = resolvedStatus === "Completed";
 
-      updatedJobsList.push({
+      const newJobRecord: JobRecord = {
         id: `Upload_${opMonth}_${stg.jobNo}`,
         jobNo: stg.jobNo,
         joinNo: stg.joinNo || undefined,
@@ -1029,7 +1031,9 @@ export function StagingUploadView({
         cbm: stg.cbm ?? undefined,
         commodity: stg.commodity || undefined,
         nextAction: isDone ? "นำส่งสินค้าเรียบร้อย" : "ตรวจปล่อยสินค้า",
-      });
+      };
+      updatedJobsList.push(newJobRecord);
+      changedJobs.push(newJobRecord);
 
       const newIdx = updatedJobsList.length - 1;
       jobIndexMap.set(stgKey, newIdx);
@@ -1047,7 +1051,7 @@ export function StagingUploadView({
       const response = await fetch("/api/uploads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "apply", jobs: updatedJobsList }),
+        body: JSON.stringify({ action: "apply", deltaJobs: changedJobs }),
       });
       const result = await response.json();
       if (!response.ok || !result.ok) {

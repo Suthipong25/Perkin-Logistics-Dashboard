@@ -3,12 +3,22 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import fsSync from "fs";
+import os from "os";
 import path from "path";
 import { getJobs, getTransport } from "@/lib/data-store";
-import { upsertJobsToPostgres, upsertTransportToPostgres } from "@/lib/db";
+import {
+  fetchJobsFromPostgres,
+  fetchTransportFromPostgres,
+  upsertJobsToPostgres,
+  upsertTransportToPostgres,
+} from "@/lib/db";
+import { parseUploadedExcelBuffer } from "@/lib/excel-parser";
+import { JobRecord, TransportRecord } from "@/types/dashboard";
 
 const execFileAsync = promisify(execFile);
 export const dynamic = "force-dynamic";
+
+const IS_VERCEL = Boolean(process.env.VERCEL);
 
 function resolveScript(name: string): string {
   const local = path.resolve(process.cwd(), "scripts", name);
@@ -24,155 +34,235 @@ function resolveBackupDir(): string {
   return local;
 }
 
+async function getCurrentJobs(): Promise<JobRecord[]> {
+  const pgJobs = await fetchJobsFromPostgres();
+  if (pgJobs && pgJobs.length > 0) return pgJobs;
+  return getJobs();
+}
+
+async function getCurrentTransport(): Promise<TransportRecord[]> {
+  const pgTransport = await fetchTransportFromPostgres();
+  if (pgTransport && pgTransport.length > 0) return pgTransport;
+  return getTransport();
+}
+
 export async function POST(req: NextRequest) {
   try {
     const contentType = req.headers.get("content-type") || "";
 
     if (contentType.includes("application/json")) {
       const body = await req.json();
-      if (body.action === "apply" && Array.isArray(body.jobs)) {
-        const jobsPath = path.resolve(process.cwd(), "data/jobs.json");
 
-        // 1. Snapshot backup before overwrite (Data Safety Guarantee)
-        const backupDir = resolveBackupDir();
-        await fs.mkdir(backupDir, { recursive: true }).catch(() => {});
-        const backupPath = path.join(
-          backupDir,
-          `snapshot_${Date.now()}_jobs_applied.json`
-        );
-        await fs.copyFile(jobsPath, backupPath).catch(() => {});
+      if (
+        body.action === "apply" &&
+        (Array.isArray(body.deltaJobs) || Array.isArray(body.jobs))
+      ) {
+        const deltaJobs: JobRecord[] | null = Array.isArray(body.deltaJobs)
+          ? body.deltaJobs
+          : null;
+        const fullJobs: JobRecord[] | null = Array.isArray(body.jobs)
+          ? body.jobs
+          : null;
+        const jobsToUpsert = deltaJobs ?? fullJobs ?? [];
 
-        // 2. Atomic write via temp file
-        const tmpPath = path.resolve(
-          process.cwd(),
-          `data/jobs.json.tmp.${Date.now()}`
-        );
-        await fs.writeFile(
-          tmpPath,
-          JSON.stringify(body.jobs, null, 1),
-          "utf-8"
-        );
-        await fs.rename(tmpPath, jobsPath);
-
-        // 3. PostgreSQL persistence (Supabase Cloud + Local LAN Master)
-        try {
-          await upsertJobsToPostgres(body.jobs);
-        } catch (dbErr) {
-          console.warn("[UPLOAD] PostgreSQL upsert warning:", dbErr);
+        // 1. PostgreSQL persistence (Supabase Cloud + Local LAN Master)
+        const pgResult = await upsertJobsToPostgres(jobsToUpsert);
+        if (!pgResult.success && IS_VERCEL) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: `ไม่สามารถบันทึกลงฐานข้อมูล PostgreSQL ได้: ${pgResult.error || "Unknown DB error"}`,
+            },
+            { status: 500 }
+          );
         }
 
-        // 4. Background SQLite synchronization
-        try {
-          const sqliteScript = resolveScript("sqlite_db.py");
-          const pythonExe = process.env.PYTHON_PATH || "python";
-          if (fsSync.existsSync(sqliteScript)) {
-            execFile(pythonExe, [sqliteScript], () => {});
+        // 2. Local JSON & SQLite mirror (skip on Vercel read-only filesystem)
+        let finalTotalJobs = fullJobs?.length ?? jobsToUpsert.length;
+        if (!IS_VERCEL) {
+          try {
+            const jobsPath = path.resolve(process.cwd(), "data/jobs.json");
+            let mergedLocalJobs: JobRecord[];
+
+            if (fullJobs) {
+              mergedLocalJobs = fullJobs;
+            } else {
+              const existingLocal = getJobs();
+              const byKey = new Map<string, number>();
+              mergedLocalJobs = [...existingLocal];
+              mergedLocalJobs.forEach((j, idx) => {
+                if (j.id) byKey.set(`ID:${j.id}`, idx);
+                if (j.jobNo) byKey.set(`NO:${j.jobNo.trim().toUpperCase()}`, idx);
+              });
+              for (const dj of jobsToUpsert) {
+                const idxById = dj.id ? byKey.get(`ID:${dj.id}`) : undefined;
+                const idxByNo = dj.jobNo
+                  ? byKey.get(`NO:${dj.jobNo.trim().toUpperCase()}`)
+                  : undefined;
+                const targetIdx = idxById ?? idxByNo;
+                if (targetIdx !== undefined) {
+                  mergedLocalJobs[targetIdx] = dj;
+                } else {
+                  mergedLocalJobs.push(dj);
+                }
+              }
+            }
+            finalTotalJobs = mergedLocalJobs.length;
+
+            const backupDir = resolveBackupDir();
+            await fs.mkdir(backupDir, { recursive: true }).catch(() => {});
+            const backupPath = path.join(
+              backupDir,
+              `snapshot_${Date.now()}_jobs_applied.json`
+            );
+            await fs.copyFile(jobsPath, backupPath).catch(() => {});
+
+            const tmpPath = path.resolve(
+              process.cwd(),
+              `data/jobs.json.tmp.${Date.now()}`
+            );
+            await fs.writeFile(
+              tmpPath,
+              JSON.stringify(mergedLocalJobs, null, 1),
+              "utf-8"
+            );
+            await fs.rename(tmpPath, jobsPath);
+
+            const sqliteScript = resolveScript("sqlite_db.py");
+            const pythonExe = process.env.PYTHON_PATH || "python";
+            if (fsSync.existsSync(sqliteScript)) {
+              execFile(pythonExe, [sqliteScript], () => {});
+            }
+          } catch (localErr) {
+            console.warn("[UPLOAD] Local jobs mirror warning:", localErr);
           }
-        } catch {
-          // ignore
         }
 
         return NextResponse.json({
           ok: true,
           saved: true,
-          totalJobs: body.jobs.length,
-          message: `บันทึกข้อมูล ${body.jobs.length} งานลงระบบและ PostgreSQL เรียบร้อยแล้ว`,
+          totalJobs: finalTotalJobs,
+          upsertedJobs: jobsToUpsert.length,
+          message: `บันทึกข้อมูล ${jobsToUpsert.length} รายการลงระบบและ PostgreSQL เรียบร้อยแล้ว`,
         });
       }
 
       if (body.action === "apply_transport" && Array.isArray(body.trips)) {
-        const transportPath = path.resolve(process.cwd(), "data/transport.json");
-        let existingTransport: any[] = [];
-        try {
-          const raw = await fs.readFile(transportPath, "utf-8");
-          existingTransport = JSON.parse(raw);
-        } catch {
-          existingTransport = [];
-        }
+        const existingTransport = await getCurrentTransport();
 
-        // 1. Snapshot backup before overwrite
-        const backupDir = path.resolve(process.cwd(), "../backups");
-        await fs.mkdir(backupDir, { recursive: true }).catch(() => {});
-        const backupPath = path.join(
-          backupDir,
-          `snapshot_${Date.now()}_transport_applied.json`
-        );
-        await fs.copyFile(transportPath, backupPath).catch(() => {});
-
-        // 2. Merge selected trips
+        // 1. Merge selected trips
         const map = new Map<string, any>();
         for (const t of existingTransport) {
           const key = (t.tripNo || t.transportNo || "").trim().toUpperCase();
-          if (key) map.set(key, t);
+          if (key) map.set(key, { ...t });
         }
 
         let added = 0;
         let updated = 0;
+        const tripsToUpsert: any[] = [];
         for (const trip of body.trips) {
           const key = (trip.tripNo || trip.transportNo || "").trim().toUpperCase();
           if (!key) continue;
           if (map.has(key)) {
             const ex = map.get(key);
             Object.assign(ex, trip);
+            tripsToUpsert.push(ex);
             updated++;
           } else {
             map.set(key, trip);
+            tripsToUpsert.push(trip);
             added++;
           }
         }
 
         const mergedTransport = Array.from(map.values());
-        const tmpPath = path.resolve(
-          process.cwd(),
-          `data/transport.json.tmp.${Date.now()}`
-        );
-        await fs.writeFile(tmpPath, JSON.stringify(mergedTransport, null, 2), "utf-8");
-        await fs.rename(tmpPath, transportPath);
 
-        // 3. Also enrich linked jobs with transportNo
-        const jobsPath = path.resolve(process.cwd(), "data/jobs.json");
-        let enrichedJobsCount = 0;
-        try {
-          const rawJ = await fs.readFile(jobsPath, "utf-8");
-          const jobsList = JSON.parse(rawJ);
-          const jobMap = new Map<string, any>();
-          for (const j of jobsList) {
-            if (j.jobNo) jobMap.set(j.jobNo.trim().toUpperCase(), j);
-            if (j.joinNo) {
-              const jn = j.joinNo.trim().toUpperCase().replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
-              if (jn && !jobMap.has(jn)) jobMap.set(jn, j);
-            }
-          }
-          for (const trip of body.trips) {
-            if (trip.jobNo) {
-              const jKey = trip.jobNo.trim().toUpperCase();
-              const matched = jobMap.get(jKey);
-              if (matched && !matched.transportNo) {
-                matched.transportNo = trip.tripNo || trip.transportNo;
-                enrichedJobsCount++;
-              }
-            }
-          }
-          if (enrichedJobsCount > 0) {
-            await fs.writeFile(jobsPath, JSON.stringify(jobsList, null, 1), "utf-8");
-          }
-        } catch {}
-
-        // 4. PostgreSQL persistence (Supabase Cloud + Local LAN Master)
-        try {
-          await upsertTransportToPostgres(mergedTransport);
-        } catch (dbErr) {
-          console.warn("[UPLOAD] PostgreSQL transport upsert warning:", dbErr);
+        // 2. PostgreSQL persistence (Supabase Cloud + Local LAN Master)
+        const pgResult = await upsertTransportToPostgres(tripsToUpsert);
+        if (!pgResult.success && IS_VERCEL) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error: `ไม่สามารถบันทึกเที่ยวรถลง PostgreSQL ได้: ${pgResult.error || "Unknown DB error"}`,
+            },
+            { status: 500 }
+          );
         }
 
-        // 5. Background SQLite sync
-        try {
-          const sqliteScript = resolveScript("sqlite_db.py");
-          const pythonExe = process.env.PYTHON_PATH || "python";
-          if (fsSync.existsSync(sqliteScript)) {
-            execFile(pythonExe, [sqliteScript], () => {});
+        // 3. Local JSON & SQLite mirror (skip on Vercel read-only filesystem)
+        if (!IS_VERCEL) {
+          try {
+            const transportPath = path.resolve(
+              process.cwd(),
+              "data/transport.json"
+            );
+            const backupDir = resolveBackupDir();
+            await fs.mkdir(backupDir, { recursive: true }).catch(() => {});
+            const backupPath = path.join(
+              backupDir,
+              `snapshot_${Date.now()}_transport_applied.json`
+            );
+            await fs.copyFile(transportPath, backupPath).catch(() => {});
+
+            const tmpPath = path.resolve(
+              process.cwd(),
+              `data/transport.json.tmp.${Date.now()}`
+            );
+            await fs.writeFile(
+              tmpPath,
+              JSON.stringify(mergedTransport, null, 2),
+              "utf-8"
+            );
+            await fs.rename(tmpPath, transportPath);
+
+            // Also enrich linked jobs locally with transportNo
+            const jobsPath = path.resolve(process.cwd(), "data/jobs.json");
+            let enrichedJobsCount = 0;
+            try {
+              const rawJ = await fs.readFile(jobsPath, "utf-8");
+              const jobsList = JSON.parse(rawJ);
+              const jobMap = new Map<string, any>();
+              for (const j of jobsList) {
+                if (j.jobNo) jobMap.set(j.jobNo.trim().toUpperCase(), j);
+                if (j.joinNo) {
+                  const jn = j.joinNo
+                    .trim()
+                    .toUpperCase()
+                    .replace(/\s*\((SEA|AIR)\)\s*$/i, "")
+                    .trim();
+                  if (jn && !jobMap.has(jn)) jobMap.set(jn, j);
+                }
+              }
+              for (const trip of body.trips) {
+                if (trip.jobNo) {
+                  const jKey = trip.jobNo.trim().toUpperCase();
+                  const matched = jobMap.get(jKey);
+                  if (matched && !matched.transportNo) {
+                    matched.transportNo = trip.tripNo || trip.transportNo;
+                    enrichedJobsCount++;
+                  }
+                }
+              }
+              if (enrichedJobsCount > 0) {
+                await fs.writeFile(
+                  jobsPath,
+                  JSON.stringify(jobsList, null, 1),
+                  "utf-8"
+                );
+              }
+            } catch {}
+
+            const sqliteScript = resolveScript("sqlite_db.py");
+            const pythonExe = process.env.PYTHON_PATH || "python";
+            if (fsSync.existsSync(sqliteScript)) {
+              execFile(pythonExe, [sqliteScript], () => {});
+            }
+          } catch (localErr) {
+            console.warn("[UPLOAD] Local transport mirror warning:", localErr);
           }
-        } catch {}
+        }
+
+        const currentJobs = await getCurrentJobs();
 
         return NextResponse.json({
           ok: true,
@@ -181,8 +271,8 @@ export async function POST(req: NextRequest) {
           addedTrips: added,
           updatedTrips: updated,
           transport: mergedTransport,
-          jobs: getJobs(),
-          message: `นำเข้าเที่ยวรถสำเร็จ ${added} เที่ยว (ยอดรวม ${mergedTransport.length} เที่ยว) ลงระบบและ PostgreSQL เรียบร้อยแล้ว`,
+          jobs: currentJobs,
+          message: `นำเข้าเที่ยวรถสำเร็จ ${added} เที่ยวใหม่ / อัปเดต ${updated} เที่ยว (ยอดรวม ${mergedTransport.length} เที่ยว) ลงระบบและ PostgreSQL เรียบร้อยแล้ว`,
         });
       }
     }
@@ -200,70 +290,85 @@ export async function POST(req: NextRequest) {
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
       const fileNameLower = file.name.toLowerCase();
+
       const isBookingMaster =
-        fileNameLower.includes("booking") ||
-        (fileNameLower.endsWith(".xlsx") && buffer.length > 2 * 1024 * 1024);
+        fileNameLower.endsWith(".xlsx") &&
+        (fileNameLower.includes("booking report") ||
+          buffer.length > 2 * 1024 * 1024);
       const isTransportMaster =
-        fileNameLower.includes("transport") ||
-        fileNameLower.includes("job_daily");
+        fileNameLower.endsWith(".xlsx") && fileNameLower.includes("job_daily");
 
-      const tmpDir = path.resolve(process.cwd(), "data/tmp/uploads");
-      await fs.mkdir(tmpDir, { recursive: true });
-      const tempPath = path.join(
-        tmpDir,
-        `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_\-\.]/g, "_")}`
-      );
-      await fs.writeFile(tempPath, buffer);
+      // Case A & B: Full Master Workbooks (Local Python pipeline only)
+      if (isBookingMaster || isTransportMaster) {
+        if (IS_VERCEL) {
+          return NextResponse.json(
+            {
+              ok: false,
+              error:
+                "ไฟล์ Master ขนาดใหญ่ (2026 Booking Report / JOB_Daily) กรุณาซิงค์ผ่านเครื่อง Local (localhost) ส่วนรายงานประจำวัน/รายแผนก (.xls/.xlsx/.csv) สามารถอัปโหลดบนเว็บนี้ได้ทันทีครับ",
+            },
+            { status: 400 }
+          );
+        }
 
-      const pythonExe = process.env.PYTHON_PATH || "python";
-
-      // Case A: Full Master Booking Report uploaded (Direct Apply)
-      if (isBookingMaster) {
-        const rootMaster = path.resolve(
-          process.cwd(),
-          "data/2026 Booking Report.xlsx"
+        const tmpDir = path.join(os.tmpdir(), "perkin-uploads");
+        await fs.mkdir(tmpDir, { recursive: true });
+        const tempPath = path.join(
+          tmpDir,
+          `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_\-\.]/g, "_")}`
         );
-        const backupMaster = path.resolve(
-          resolveBackupDir(),
-          `snapshot_${Date.now()}_booking.xlsx`
-        );
-        await fs
-          .mkdir(resolveBackupDir(), { recursive: true })
-          .catch(() => {});
-        await fs.copyFile(rootMaster, backupMaster).catch(() => {});
-        await fs.copyFile(tempPath, rootMaster);
-        await fs.unlink(tempPath).catch(() => {});
+        await fs.writeFile(tempPath, buffer);
 
-        const pipelineScript = resolveScript("standardize_pipeline.py");
-        if (fsSync.existsSync(pipelineScript)) {
-          await execFileAsync(pythonExe, [pipelineScript]);
+        const pythonExe = process.env.PYTHON_PATH || "python";
+
+        if (isBookingMaster) {
+          const rootMaster = path.resolve(
+            process.cwd(),
+            "data/2026 Booking Report.xlsx"
+          );
+          const backupMaster = path.resolve(
+            resolveBackupDir(),
+            `snapshot_${Date.now()}_booking.xlsx`
+          );
+          await fs
+            .mkdir(resolveBackupDir(), { recursive: true })
+            .catch(() => {});
+          await fs.copyFile(rootMaster, backupMaster).catch(() => {});
+          await fs.copyFile(tempPath, rootMaster);
+          await fs.unlink(tempPath).catch(() => {});
+
+          const pipelineScript = resolveScript("standardize_pipeline.py");
+          if (fsSync.existsSync(pipelineScript)) {
+            await execFileAsync(pythonExe, [pipelineScript]);
+          }
+
+          const jobs = getJobs();
+          const transport = getTransport();
+
+          if (jobs.length > 0) {
+            await upsertJobsToPostgres(jobs).catch((e) =>
+              console.warn("[UPLOAD] PG jobs sync warning:", e)
+            );
+          }
+          if (transport.length > 0) {
+            await upsertTransportToPostgres(transport).catch((e) =>
+              console.warn("[UPLOAD] PG transport sync warning:", e)
+            );
+          }
+
+          return NextResponse.json({
+            ok: true,
+            directApplied: true,
+            fileName: file.name,
+            totalJobs: jobs.length,
+            totalTransport: transport.length,
+            jobs,
+            transport,
+            message: `อัปเดตไฟล์ Master สำเร็จ! พบข้อมูลทั้งหมด ${jobs.length} งาน (บันทึกลง PostgreSQL เรียบร้อย)`,
+          });
         }
 
-        const jobs = getJobs();
-        const transport = getTransport();
-
-        // Direct persist to PostgreSQL
-        if (jobs.length > 0) {
-          await upsertJobsToPostgres(jobs).catch((e) => console.warn("[UPLOAD] PG jobs sync warning:", e));
-        }
-        if (transport.length > 0) {
-          await upsertTransportToPostgres(transport).catch((e) => console.warn("[UPLOAD] PG transport sync warning:", e));
-        }
-
-        return NextResponse.json({
-          ok: true,
-          directApplied: true,
-          fileName: file.name,
-          totalJobs: jobs.length,
-          totalTransport: transport.length,
-          jobs,
-          transport,
-          message: `อัปเดตไฟล์ Master สำเร็จ! พบข้อมูลทั้งหมด ${jobs.length} งาน (บันทึกลง PostgreSQL เรียบร้อย)`,
-        });
-      }
-
-      // Case B: Transport Daily Report uploaded
-      if (isTransportMaster) {
+        // isTransportMaster
         const rootDaily = path.resolve(
           process.cwd(),
           "data/JOB_Daily_2026 STATUS_Dashboard.xlsx"
@@ -280,7 +385,9 @@ export async function POST(req: NextRequest) {
         const transport = getTransport();
 
         if (transport.length > 0) {
-          await upsertTransportToPostgres(transport).catch((e) => console.warn("[UPLOAD] PG transport sync warning:", e));
+          await upsertTransportToPostgres(transport).catch((e) =>
+            console.warn("[UPLOAD] PG transport sync warning:", e)
+          );
         }
 
         return NextResponse.json({
@@ -295,39 +402,35 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Case C: Incremental Customs / FWD sheet uploaded -> parse for Staging preview
-      const pythonScript = resolveScript("parse_uploaded_excel.py");
-      const { stdout } = await execFileAsync(pythonExe, [pythonScript, tempPath], {
-        maxBuffer: 20 * 1024 * 1024,
-      });
-      await fs.unlink(tempPath).catch(() => {});
+      // Case C: Incremental Customs / Shipping / Oversea / Air / Transport sheet
+      // Pure Node.js in-memory parsing (zero /var/task disk writes, zero Python required -> works 100% on Vercel & Local)
+      const existingJobs = await getCurrentJobs();
+      const parsed = parseUploadedExcelBuffer(buffer, file.name, existingJobs);
 
-      const parsed = JSON.parse(stdout);
+      if (!parsed.ok) {
+        return NextResponse.json(parsed, { status: 400 });
+      }
 
       // Handle Transport file upload (Inland Transport - รถขนส่ง) -> Return preview for staging first!
       if (parsed.isTransport && Array.isArray(parsed.transportTrips)) {
-        const transportPath = path.resolve(process.cwd(), "data/transport.json");
-        let existingTransport: any[] = [];
-        try {
-          const raw = await fs.readFile(transportPath, "utf-8");
-          existingTransport = JSON.parse(raw);
-        } catch {
-          existingTransport = [];
-        }
+        const existingTransport = await getCurrentTransport();
 
-                const existingTransMap = new Map<string, any>();
+        const existingTransMap = new Map<string, any>();
         for (const t of existingTransport) {
           const key = (t.tripNo || t.transportNo || "").trim().toUpperCase();
           if (key) existingTransMap.set(key, t);
         }
 
         // เช็คว่ามีรายการที่ตรงกับ Job No หรือ Join No ที่มีในระบบหรือไม่ (ห้ามตัด prefix SH เพราะเลขรันแยกแผนกกัน)
-        const jobs = getJobs();
         const jobNoSet = new Set<string>();
-        for (const j of jobs) {
+        for (const j of existingJobs) {
           if (j.jobNo) jobNoSet.add(j.jobNo.trim().toUpperCase());
           if (j.joinNo) {
-            const jn = j.joinNo.trim().toUpperCase().replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
+            const jn = j.joinNo
+              .trim()
+              .toUpperCase()
+              .replace(/\s*\((SEA|AIR)\)\s*$/i, "")
+              .trim();
             if (jn) jobNoSet.add(jn);
           }
         }
@@ -343,7 +446,9 @@ export async function POST(req: NextRequest) {
 
           const normD = (d: any) => (d ? String(d).trim().slice(0, 10) : "");
           const incDeliver = normD(t.deliver || t.deliverDate);
-          const exDeliver = normD(existingTrip?.deliver || existingTrip?.deliverDate);
+          const exDeliver = normD(
+            existingTrip?.deliver || existingTrip?.deliverDate
+          );
           const incPickup = normD(t.pickupDate);
           const exPickup = normD(existingTrip?.pickupDate);
 
@@ -367,7 +472,9 @@ export async function POST(req: NextRequest) {
           }
 
           const linkedJobClean = (t.jobNo || "").trim().toUpperCase();
-          const hasLinkedJob = Boolean(linkedJobClean && jobNoSet.has(linkedJobClean));
+          const hasLinkedJob = Boolean(
+            linkedJobClean && jobNoSet.has(linkedJobClean)
+          );
 
           return {
             ...t,
@@ -392,7 +499,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           ok: true,
           isTransport: true,
-          directApplied: false, // ดูข้อมูลก่อน ไม่ใช่เพิ่มเลยตามคำสั่งผู้ใช้
+          directApplied: false,
           fileName: file.name,
           fileType: "transport",
           fileTypeLabel: "รายงานการจองรถขนส่งในประเทศ (Inland Transport)",

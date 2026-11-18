@@ -1,0 +1,893 @@
+import * as XLSX from "xlsx";
+import { JobRecord } from "@/types/dashboard";
+
+const thaiDecoder = new TextDecoder("windows-874");
+
+function fixThaiEncoding(s: string): string {
+  if (!s) return s;
+  const bytes = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code > 255) return s;
+    bytes[i] = code;
+  }
+  try {
+    const decoded = thaiDecoder.decode(bytes);
+    if (/[\u0e00-\u0e7f]/.test(decoded)) {
+      return decoded;
+    }
+  } catch {
+    // ignore
+  }
+  return s;
+}
+
+function cleanText(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    const y = v.getFullYear();
+    const m = String(v.getMonth() + 1).padStart(2, "0");
+    const d = String(v.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const str = fixThaiEncoding(String(v));
+  return str.replace(/[\t\u00a0]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function excelDateToIso(val: unknown): string | null {
+  if (val === null || val === undefined || val === "") return null;
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, "0");
+    const d = String(val.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const valStr = String(val).trim();
+  if (!valStr) return null;
+
+  const num = Number(valStr);
+  if (!isNaN(num) && num > 25000 && num < 80000) {
+    const ms = Date.UTC(1899, 11, 30) + Math.floor(num) * 86400000;
+    const dt = new Date(ms);
+    const y = dt.getUTCFullYear();
+    const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(dt.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  const isoMatch = valStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  const dmyMatch = valStr.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})/);
+  if (dmyMatch) {
+    const d = dmyMatch[1].padStart(2, "0");
+    const mo = dmyMatch[2].padStart(2, "0");
+    let y = parseInt(dmyMatch[3], 10);
+    if (y < 100) y += 2000;
+    else if (y > 2400) y -= 543;
+    return `${String(y).padStart(4, "0")}-${mo}-${d}`;
+  }
+
+  return valStr.length <= 10 ? valStr : null;
+}
+
+interface MasterIndex {
+  byNo: Map<string, JobRecord>;
+  byJoin: Map<string, JobRecord>;
+  byBl: Map<string, JobRecord>;
+}
+
+function buildMasterIndex(jobs: JobRecord[]): MasterIndex {
+  const byNo = new Map<string, JobRecord>();
+  const byJoin = new Map<string, JobRecord>();
+  const byBl = new Map<string, JobRecord>();
+
+  for (const j of jobs) {
+    const jno = (j.jobNo || "").trim().toUpperCase();
+    if (jno) byNo.set(jno, j);
+
+    const jraw = (j.joinNo || "").trim().toUpperCase();
+    if (jraw) {
+      const jclean = jraw.replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
+      if (jclean) byJoin.set(jclean, j);
+      byJoin.set(jraw, j);
+    }
+
+    const hbl = (j.hbl || "").trim().toUpperCase();
+    if (hbl) byBl.set(hbl, j);
+  }
+
+  return { byNo, byJoin, byBl };
+}
+
+function checkDateDiff(
+  incomingEtd: string | null,
+  incomingEta: string | null,
+  incomingTime: string | null,
+  matchJob?: JobRecord
+) {
+  if (!matchJob) {
+    return {
+      isChanged: false,
+      diffStr: "",
+      exEtd: null as string | null,
+      exEta: null as string | null,
+      exTime: null as string | null,
+    };
+  }
+  const normD = (d: unknown) => (d ? String(d).trim().slice(0, 10) : "");
+  const incEtd = normD(incomingEtd);
+  const exEtd = normD(matchJob.etd || matchJob.submitDate);
+  const incEta = normD(incomingEta);
+  const exEta = normD(matchJob.eta);
+  let incTime = (incomingTime || "").trim();
+  if (incTime === "00:00") incTime = "";
+  let exTime = (matchJob.flightTime || "").trim();
+  if (exTime === "00:00") exTime = "";
+
+  const diffs: string[] = [];
+  if (incEtd && incEtd !== exEtd) {
+    diffs.push(`ETD: ${exEtd || "-"} ➔ ${incEtd}`);
+  }
+  if (incEta && incEta !== exEta) {
+    diffs.push(`ETA: ${exEta || "-"} ➔ ${incEta}`);
+  }
+  if (incTime && incTime !== exTime) {
+    diffs.push(`เวลา: ${exTime || "-"} ➔ ${incTime}`);
+  }
+
+  return {
+    isChanged: diffs.length > 0,
+    diffStr: diffs.join(" • "),
+    exEtd: exEtd || null,
+    exEta: exEta || null,
+    exTime: exTime || null,
+  };
+}
+
+function stripModeSuffix(val: string): string {
+  return val.replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim().toUpperCase();
+}
+
+function parseFwdSea2Row(rawRows: string[][], idx: MasterIndex) {
+  const rows: Record<string, unknown>[] = [];
+  let r = 3;
+  while (r < rawRows.length) {
+    const row1 = rawRows[r] || [];
+    const noVal = cleanText(row1[0]);
+    const jobVal = cleanText(row1[5]);
+
+    if (/^\d+(\.0)?$/.test(noVal) || /^(SI|SE)\d+/i.test(jobVal)) {
+      const etdRaw = cleanText(row1[1]);
+      const carrier = cleanText(row1[2]);
+      const agent = cleanText(row1[3]);
+      const booking = cleanText(row1[4]);
+      const hbl = cleanText(row1[6]);
+      const linerBooking = cleanText(row1[7]);
+      const localCust = cleanText(row1[8]);
+      const pol = cleanText(row1[11]);
+      const commodity = cleanText(row1[14]);
+      const loadingDate = excelDateToIso(cleanText(row1[14]));
+
+      const row2 = rawRows[r + 1] || [];
+      const etaRaw = cleanText(row2[1]);
+      const jobDateRaw = cleanText(row2[5]);
+      const mbl = cleanText(row2[7]);
+      const overseaCust = cleanText(row2[8]);
+      const feeder = cleanText(row2[10]);
+      const pod = cleanText(row2[12]);
+      const csName = cleanText(row2[23]);
+
+      const jobClean = stripModeSuffix(jobVal);
+      const customer = overseaCust || localCust || "—";
+      const etdIso = excelDateToIso(etdRaw);
+      const etaIso = excelDateToIso(etaRaw);
+      const jobDateIso = excelDateToIso(jobDateRaw) || etdIso || etaIso;
+
+      const match =
+        idx.byJoin.get(jobClean) ||
+        idx.byNo.get(jobClean) ||
+        (hbl ? idx.byBl.get(hbl.toUpperCase()) : undefined);
+      const actionType = match ? "update" : "new";
+      const { isChanged, diffStr, exEtd, exEta } = checkDateDiff(
+        etdIso,
+        etaIso,
+        null,
+        match
+      );
+      const note = match
+        ? isChanged
+          ? `🔄 อัปเดตกำหนดการ: ${diffStr} (อัปเดตทับงานเดิม ไม่เพิ่มแถว)`
+          : "⚪ งานเดิมในระบบแล้ว (วันเวลาไม่เปลี่ยน • ข้ามเพื่อไม่ให้งานบวม)"
+        : "✨ งานใหม่จาก FWD (Sea Forwarding)";
+
+      rows.push({
+        id: `fwd-sea-${r}-${jobClean}`,
+        sheet: "SEA FWD",
+        jobNo: jobClean,
+        joinNo: match?.jobNo || "",
+        customer,
+        declarationNo: "",
+        invoiceNo: booking,
+        referenceNo: booking,
+        status: "In Progress",
+        customsStatus: null,
+        etd: etdIso,
+        eta: etaIso,
+        submitDate: jobDateIso,
+        containerType: "FCL / LCL",
+        grossWeight: null,
+        cbm: null,
+        csName,
+        bl: hbl || mbl,
+        commodity,
+        carrier,
+        agent,
+        feeder,
+        vessel: feeder,
+        linerBooking,
+        pol,
+        pod,
+        loadingDate,
+        actionType,
+        isDateChanged: isChanged,
+        dateChangeDiff: diffStr,
+        oldEtd: exEtd,
+        oldEta: exEta,
+        validationStatus: "valid",
+        validationNote: note,
+      });
+      r += 2;
+    } else {
+      r += 1;
+    }
+  }
+  return rows;
+}
+
+function parseFwdAir2Row(rawRows: string[][], idx: MasterIndex) {
+  const rows: Record<string, unknown>[] = [];
+  let r = 2;
+  while (r < rawRows.length) {
+    const row1 = rawRows[r] || [];
+    const noVal = cleanText(row1[0]);
+    const jobVal = cleanText(row1[1]);
+
+    if (/^\d+(\.0)?$/.test(noVal) || /^(AI|AE)\d+/i.test(jobVal)) {
+      const shipper = cleanText(row1[2]);
+      const agent = cleanText(row1[3]);
+      const hawb = cleanText(row1[4]);
+      const flight = cleanText(row1[5]);
+      const pod = cleanText(row1[6]);
+      const gwRaw = cleanText(row1[8]);
+      const csName = cleanText(row1[10]);
+
+      const row2 = rawRows[r + 1] || [];
+      const jobDateRaw = cleanText(row2[1]);
+      const consignee = cleanText(row2[2]);
+      const mawb = cleanText(row2[4]);
+      const flightTime = cleanText(row2[5]);
+      const etaRaw = cleanText(row2[6]);
+
+      const jobClean = stripModeSuffix(jobVal);
+      const customer = consignee || shipper || "—";
+      const etaIso = excelDateToIso(etaRaw);
+      const jobDateIso = excelDateToIso(jobDateRaw);
+
+      let gwVal: number | null = null;
+      if (gwRaw) {
+        const parsed = parseFloat(gwRaw.replace(/,/g, ""));
+        if (!isNaN(parsed)) gwVal = parsed;
+      }
+
+      const match =
+        idx.byJoin.get(jobClean) ||
+        idx.byNo.get(jobClean) ||
+        (hawb ? idx.byBl.get(hawb.toUpperCase()) : undefined);
+      const actionType = match ? "update" : "new";
+      const { isChanged, diffStr, exEtd, exEta, exTime } = checkDateDiff(
+        jobDateIso,
+        etaIso,
+        flightTime,
+        match
+      );
+      const note = match
+        ? isChanged
+          ? `🔄 อัปเดตกำหนดการ: ${diffStr} (อัปเดตทับงานเดิม ไม่เพิ่มแถว)`
+          : "⚪ งานเดิมในระบบแล้ว (วันเวลาไม่เปลี่ยน • ข้ามเพื่อไม่ให้งานบวม)"
+        : "✨ งานใหม่จาก FWD (Air Forwarding)";
+
+      rows.push({
+        id: `fwd-air-${r}-${jobClean}`,
+        sheet: "AIR FWD",
+        jobNo: jobClean,
+        joinNo: match?.jobNo || "",
+        customer,
+        declarationNo: "",
+        invoiceNo: "",
+        referenceNo: hawb || mawb,
+        status: "In Progress",
+        customsStatus: null,
+        etd: jobDateIso,
+        eta: etaIso,
+        submitDate: jobDateIso,
+        containerType: "AIR CARGO",
+        grossWeight: gwVal,
+        cbm: null,
+        csName,
+        bl: hawb || mawb,
+        commodity: "",
+        carrier: agent,
+        agent,
+        flight,
+        flightNo: flight,
+        flightTime: flightTime && flightTime !== "00:00" ? flightTime : null,
+        pod,
+        actionType,
+        isDateChanged: isChanged,
+        dateChangeDiff: diffStr,
+        oldEtd: exEtd,
+        oldEta: exEta,
+        oldFlightTime: exTime,
+        validationStatus: "valid",
+        validationNote: note,
+      });
+      r += 2;
+    } else {
+      r += 1;
+    }
+  }
+  return rows;
+}
+
+function parseTransportRows(rawRows: string[][]) {
+  const trips: Record<string, unknown>[] = [];
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(10, rawRows.length); i++) {
+    const lineStr = rawRows[i].map((c) => cleanText(c).toUpperCase()).join(" ");
+    if (
+      (lineStr.includes("STUFFING") && lineStr.includes("VOLUME")) ||
+      (lineStr.includes("JOIN NO") && lineStr.includes("JOB NO"))
+    ) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx === -1) return [];
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  for (let rIdx = headerIdx + 1; rIdx < rawRows.length; rIdx++) {
+    const row = rawRows[rIdx];
+    if (!row || !row.some((c) => cleanText(c))) continue;
+    const lineStr = row.join(" ").toUpperCase();
+    if (lineStr.includes("TOTAL :") || lineStr.includes("TOTAL:")) continue;
+
+    const val = (i: number) => (i >= 0 && i < row.length ? cleanText(row[i]) : "");
+    const col2 = val(2).toUpperCase();
+    const col3 = val(3).toUpperCase();
+
+    const tsNo = col3.startsWith("TS")
+      ? col3
+      : col2.startsWith("TS")
+      ? col2
+      : "";
+    if (!tsNo || tsNo.length < 4) continue;
+
+    const linkedJob = !col2.startsWith("TS") && col2.length >= 4 ? col2 : "";
+    const cust = val(4);
+    const vol = val(6);
+    const pFrom = val(9);
+    const pDate = excelDateToIso(val(10));
+    const dTo = val(12);
+    const dDate = excelDateToIso(val(13));
+    const retTo = val(15);
+    const transporter = val(24);
+    const plate = val(25);
+    const driver = val(26);
+
+    const status = dDate && dDate < todayStr ? "ส่งมอบแล้ว" : "กำลังวิ่ง";
+
+    trips.push({
+      tripNo: tsNo,
+      transportNo: tsNo,
+      jobNo: linkedJob || "",
+      customer: cust,
+      driver: driver || transporter || vol,
+      driverName: driver,
+      transporter,
+      truckType: vol,
+      container: vol,
+      plateNo: plate,
+      pickupLocation: pFrom,
+      pickupDate: pDate,
+      deliveryLocation: dTo,
+      deliver: dDate,
+      deliverDate: dDate,
+      returnDepot: retTo,
+      status,
+      pod: "",
+    });
+  }
+  return trips;
+}
+
+function parseSheetRows(
+  sheetName: string,
+  rawRows: string[][],
+  idx: MasterIndex
+): {
+  rows: Record<string, unknown>[];
+  isCustoms: boolean;
+  found: boolean;
+  isTransport: boolean;
+} {
+  if (!rawRows || rawRows.length === 0) {
+    return { rows: [], isCustoms: false, found: false, isTransport: false };
+  }
+
+  const firstFew = rawRows
+    .slice(0, 4)
+    .map((r) => r.map((c) => cleanText(c).toUpperCase()).join(" "))
+    .join(" ");
+
+  if (
+    firstFew.includes("TRANSPORT") ||
+    firstFew.includes("EXAMINATION AND DELIVERY") ||
+    sheetName.toUpperCase() === "EXAMINATION AND DELIVERY" ||
+    (firstFew.includes("STUFFING") && firstFew.includes("DELIVERY BY"))
+  ) {
+    const trips = parseTransportRows(rawRows);
+    if (trips.length > 0) {
+      return { rows: trips, isCustoms: false, found: true, isTransport: true };
+    }
+  }
+
+  if (
+    (firstFew.includes("BOOKING REPORT") || firstFew.includes("BOOKING DATE")) &&
+    firstFew.includes("CARRIER") &&
+    firstFew.includes("AGENT")
+  ) {
+    const rows = parseFwdSea2Row(rawRows, idx);
+    if (rows.length > 0) {
+      return { rows, isCustoms: false, found: true, isTransport: false };
+    }
+  }
+
+  if (
+    firstFew.includes("DAILY SHIPMENT REPORT") ||
+    (firstFew.includes("HAWB") && firstFew.includes("FLIGHT") && firstFew.includes("MAWB"))
+  ) {
+    const rows = parseFwdAir2Row(rawRows, idx);
+    if (rows.length > 0) {
+      return { rows, isCustoms: false, found: true, isTransport: false };
+    }
+  }
+
+  // Standard 1-row layout (Customs / Shipping)
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(15, rawRows.length); i++) {
+    const nonEmpty = rawRows[i].map((c) => cleanText(c).toUpperCase()).filter(Boolean);
+    if (nonEmpty.length < 3) continue;
+    const lineStr = nonEmpty.join(" ");
+    const hasJob = nonEmpty.some((c) => /JOB\s*NO\.?/.test(c)) || lineStr.includes("JOB NO");
+    const hasDecl = nonEmpty.some((c) => c.includes("DECLARATION"));
+    const hasCust = ["IMPORTER", "EXPORTER", "CUSTOMER"].some((k) => lineStr.includes(k));
+    if ((hasJob && (hasDecl || hasCust)) || hasDecl || hasJob) {
+      headerIdx = i;
+      break;
+    }
+  }
+
+  if (headerIdx === -1) {
+    return { rows: [], isCustoms: false, found: false, isTransport: false };
+  }
+
+  const headerCols = rawRows[headerIdx].map((c) => cleanText(c).toUpperCase());
+  const getColIdx = (names: string[]) => {
+    for (let i = 0; i < headerCols.length; i++) {
+      for (const n of names) {
+        if (headerCols[i].includes(n.toUpperCase())) return i;
+      }
+    }
+    return -1;
+  };
+
+  const idxJob = getColIdx(["JOB NO.", "JOB NO", "JOBNO"]);
+  const idxJoin = getColIdx(["JOIN NO", "JOIN"]);
+  const idxCust = getColIdx([
+    "IMPORTER NAME",
+    "EXPORTER NAME",
+    "CUSTOMER NAME",
+    "IMPORTER",
+    "EXPORTER",
+    "CUSTOMER",
+  ]);
+  const idxDecl = getColIdx([
+    "DECLARATION NO",
+    "DECLARATION NO.",
+    "DECL. NO",
+    "เลขที่ใบขน",
+    "DECLARATION",
+  ]);
+  const idxDeclType = getColIdx(["DECLARATION TYPE", "DECL TYPE"]);
+  const idxInv = getColIdx(["INVOICE NO", "INVOIVE NO", "INVOICE", "CUS.INV NO"]);
+  const idxSubmit = getColIdx(["SUBMIT DD", "SUBMIT DATE", "SUBMIT"]);
+  const idxStatus = getColIdx(["STATUS JOB", "STATUS"]);
+  const idxO409 = getColIdx(["O4O9", "0409"]);
+  const idxO309 = getColIdx(["O3O9", "0309"]);
+  const idxO209 = getColIdx(["O2O9", "0209"]);
+  const idxO109 = getColIdx(["O1O9", "0109"]);
+  const idxEtd = getColIdx(["ETD"]);
+  const idxEta = getColIdx(["ETA"]);
+  const idxGw = getColIdx(["G.W.", "GROSS WEIGHT", "GW"]);
+  const idxCbm = getColIdx(["MEASUREMENT (M3)", "MEASUREMENT", "CBM"]);
+  const idxCntr = getColIdx(["CONTAINER TYPE", "CONTAINER"]);
+  const idxCs = getColIdx(["CS NAME", "CS"]);
+  const idxMbl = getColIdx(["MBL"]);
+  const idxHbl = getColIdx(["HBL"]);
+  const idxCommodity = getColIdx(["COMMODITY"]);
+  const idxRef = getColIdx(["REFERENCE NO", "REFERANCE NO", "REF NO"]);
+  const idxClear = getColIdx(["CLEAR DATE"]);
+
+  const allHeadersStr = headerCols.join(" ");
+  const sheetUpper = sheetName.toUpperCase();
+  const isCustoms =
+    ["O4O9", "0409", "O1O9", "0109", "เลขที่ใบขน"].some((k) =>
+      allHeadersStr.includes(k)
+    ) ||
+    sheetUpper.includes("IMPORT") ||
+    sheetUpper.includes("EXPORT");
+
+  const rows: Record<string, unknown>[] = [];
+  for (let i = headerIdx + 1; i < rawRows.length; i++) {
+    const r = rawRows[i];
+    if (!r || !r.some((c) => cleanText(c))) continue;
+    const rIdx = i + 1;
+
+    const val = (col: number) => (col >= 0 && col < r.length ? cleanText(r[col]) : "");
+
+    const jobNo = stripModeSuffix(val(idxJob));
+    const joinNo = stripModeSuffix(val(idxJoin));
+    const effectiveKey = jobNo || joinNo;
+
+    if (!effectiveKey || effectiveKey.length < 4) continue;
+    if (effectiveKey.includes("JOB NO") || /^\d+(\.\d+)?$/.test(effectiveKey)) continue;
+
+    const customer = val(idxCust);
+    let declarationNo = val(idxDecl);
+    const declTypeVal = val(idxDeclType);
+    if (
+      ["NORMAL", "GENERAL", "IMPORT", "EXPORT", "TRANSIT", "RE-EXPORT"].includes(
+        declarationNo.toUpperCase()
+      )
+    ) {
+      if (!declTypeVal) {
+        // classified as declaration type, not declaration number
+      }
+      declarationNo = "";
+    }
+
+    const invNo = val(idxInv);
+    const submitIso = excelDateToIso(val(idxSubmit));
+    const etdIso = excelDateToIso(val(idxEtd)) || (isCustoms ? null : submitIso);
+    const etaIso = excelDateToIso(val(idxEta));
+
+    const stRaw = val(idxStatus);
+    const clearIso = excelDateToIso(val(idxClear));
+    const o409Val = val(idxO409);
+    const o309Val = val(idxO309);
+    const o209Val = val(idxO209);
+    const o109Val = val(idxO109);
+
+    let customsSt: string | null = null;
+    if (stRaw.includes("0409") || o409Val) customsSt = "0409";
+    else if (stRaw.includes("0309") || o309Val) customsSt = "0309";
+    else if (stRaw.includes("0209") || o209Val) customsSt = "0209";
+    else if (stRaw.includes("0109") || o109Val) customsSt = "0109";
+    else if (isCustoms && declarationNo && idxStatus === -1 && idxO409 === -1) {
+      customsSt = "0409";
+    }
+
+    const stLower = stRaw.toLowerCase();
+    const hasExplicitStatus = Boolean(stRaw);
+    let parsedStatus = "In Progress";
+    let parsedStatusDetail = "Job Control";
+    if (customsSt === "0409" || stLower.includes("complete") || stLower.includes("เสร็จ")) {
+      parsedStatus = "Completed";
+      parsedStatusDetail = "Job Complete";
+      if (!customsSt) customsSt = "0409";
+    } else if (stLower.includes("cancel") || stLower.includes("ยกเลิก")) {
+      parsedStatus = "Cancelled";
+      parsedStatusDetail = "Job Cancelled";
+    } else if (stLower.includes("wait") || stLower.includes("รอ")) {
+      parsedStatus = "In Progress";
+      parsedStatusDetail = "Job Waiting";
+    } else if (stLower.includes("booking")) {
+      parsedStatus = "Booking";
+      parsedStatusDetail = "Job Booking";
+    }
+
+    let gwVal: number | null = null;
+    const rawGw = val(idxGw).replace(/,/g, "");
+    if (rawGw) {
+      const n = parseFloat(rawGw);
+      if (!isNaN(n)) gwVal = n;
+    }
+
+    let cbmVal: number | null = null;
+    const rawCbm = val(idxCbm).replace(/,/g, "");
+    if (rawCbm) {
+      const n = parseFloat(rawCbm);
+      if (!isNaN(n)) cbmVal = n;
+    }
+
+    const match =
+      idx.byNo.get(effectiveKey) ||
+      idx.byJoin.get(effectiveKey) ||
+      (joinNo ? idx.byNo.get(joinNo) || idx.byJoin.get(joinNo) : undefined);
+    const actionType = match ? "update" : "new";
+    const { isChanged, diffStr, exEtd, exEta } = checkDateDiff(
+      etdIso,
+      etaIso,
+      null,
+      match
+    );
+
+    rows.push({
+      id: `row-${sheetName.trim()}-${rIdx}-${effectiveKey}`,
+      sheet: sheetName.trim(),
+      jobNo: effectiveKey,
+      joinNo: joinNo !== effectiveKey ? joinNo : "",
+      customer: customer || "—",
+      declarationNo,
+      invoiceNo: invNo,
+      referenceNo: val(idxRef),
+      status: parsedStatus,
+      statusDetail: parsedStatusDetail,
+      statusRaw: stRaw || parsedStatusDetail,
+      hasExplicitStatus,
+      clearDate: clearIso,
+      customsStatus: customsSt,
+      etd: etdIso,
+      eta: etaIso,
+      submitDate: submitIso,
+      containerType: val(idxCntr),
+      grossWeight: gwVal,
+      cbm: cbmVal,
+      csName: val(idxCs),
+      bl: val(idxMbl) || val(idxHbl),
+      commodity: val(idxCommodity),
+      actionType,
+      isDateChanged: isChanged,
+      dateChangeDiff: diffStr,
+      oldEtd: exEtd,
+      oldEta: exEta,
+      validationStatus:
+        declarationNo || etdIso || etaIso || effectiveKey ? "valid" : "warning",
+      validationNote: match
+        ? isChanged
+          ? `🔄 อัปเดตกำหนดการ: ${diffStr} (อัปเดตทับงานเดิม ไม่เพิ่มแถว)`
+          : "⚪ งานเดิมในระบบแล้ว (วันเวลาไม่เปลี่ยน • ข้ามเพื่อไม่ให้งานบวม)"
+        : "✨ งานใหม่",
+    });
+  }
+
+  return { rows, isCustoms, found: true, isTransport: false };
+}
+
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+function readHtmlTablesFromBuffer(buffer: Buffer): Array<[string, string[][]]> {
+  const headText = buffer.subarray(0, 5000).toString("latin1");
+  const charsetMatch = headText.match(/charset=["']?([\w-]+)/i);
+  const enc = charsetMatch ? charsetMatch[1].toLowerCase() : "utf-8";
+
+  let text: string;
+  if (enc === "tis-620" || enc === "tis620" || enc === "windows-874" || enc === "cp874") {
+    text = thaiDecoder.decode(buffer);
+  } else {
+    try {
+      text = new TextDecoder(enc).decode(buffer);
+    } catch {
+      text = buffer.toString("utf-8");
+    }
+  }
+
+  // Strip HTML comments and script/style blocks
+  const cleaned = text
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
+
+  const sheets: Array<[string, string[][]]> = [];
+  const tableRegex = /<table\b[^>]*>([\s\S]*?)<\/table>/gi;
+  let tableMatch: RegExpExecArray | null;
+  let tableIdx = 0;
+
+  while ((tableMatch = tableRegex.exec(cleaned)) !== null) {
+    tableIdx++;
+    const tableBody = tableMatch[1];
+    const rows: string[][] = [];
+    const trRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+    let trMatch: RegExpExecArray | null;
+
+    while ((trMatch = trRegex.exec(tableBody)) !== null) {
+      const cells: string[] = [];
+      const tdRegex = /<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi;
+      let tdMatch: RegExpExecArray | null;
+      while ((tdMatch = tdRegex.exec(trMatch[1])) !== null) {
+        const plain = decodeHtmlEntities(tdMatch[1].replace(/<[^>]+>/g, " "));
+        cells.push(cleanText(plain));
+      }
+      if (cells.some(Boolean)) {
+        rows.push(cells);
+      }
+    }
+
+    const head = rows
+      .slice(0, 3)
+      .map((r) => r.join(" "))
+      .join(" ")
+      .toUpperCase();
+    const name = head.includes("IMPORTER")
+      ? "IMPORT"
+      : head.includes("EXPORTER")
+      ? "EXPORT"
+      : `TABLE${tableIdx}`;
+    sheets.push([name, rows]);
+  }
+
+  return sheets;
+}
+
+function sheetToCleanRows(ws: XLSX.WorkSheet): string[][] {
+  const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+    header: 1,
+    defval: "",
+    raw: true,
+  });
+  const out: string[][] = [];
+  for (const row of raw) {
+    if (!Array.isArray(row)) continue;
+    const vals = row.map((c) => cleanText(c));
+    if (vals.some(Boolean)) out.push(vals);
+  }
+  return out;
+}
+
+export interface ParsedUploadResult {
+  ok: boolean;
+  error?: string;
+  fileName?: string;
+  fileType?: "transport" | "customs" | "fwd";
+  fileTypeLabel?: string;
+  isTransport?: boolean;
+  totalRows?: number;
+  transportTrips?: Record<string, unknown>[];
+  rows?: Record<string, unknown>[];
+  message?: string;
+}
+
+export function parseUploadedExcelBuffer(
+  buffer: Buffer,
+  fileName: string,
+  existingJobs: JobRecord[]
+): ParsedUploadResult {
+  const lower = fileName.toLowerCase();
+  const idx = buildMasterIndex(existingJobs);
+
+  const allRows: Record<string, unknown>[] = [];
+  const allTransportTrips: Record<string, unknown>[] = [];
+  const seenKeys = new Set<string>();
+  const seenTrips = new Set<string>();
+  let detectedCustoms = false;
+
+  const collectSheet = (sheetName: string, rawRows: string[][]) => {
+    const { rows, isCustoms, isTransport } = parseSheetRows(sheetName, rawRows, idx);
+    if (isTransport) {
+      for (const t of rows) {
+        const key = String(t.tripNo || "");
+        if (key && !seenTrips.has(key)) {
+          seenTrips.add(key);
+          allTransportTrips.push(t);
+        }
+      }
+    } else {
+      for (const r of rows) {
+        const key = String(r.jobNo || "");
+        if (key && !seenKeys.has(key)) {
+          seenKeys.add(key);
+          allRows.push(r);
+        }
+      }
+      if (isCustoms) detectedCustoms = true;
+    }
+  };
+
+  try {
+    if (lower.endsWith(".csv")) {
+      let text = buffer.toString("utf-8").replace(/^\uFEFF/, "");
+      if (text.includes("\uFFFD")) {
+        text = thaiDecoder.decode(buffer);
+      }
+      const wb = XLSX.read(text, { type: "string", raw: true });
+      for (const sName of wb.SheetNames) {
+        collectSheet("CSV", sheetToCleanRows(wb.Sheets[sName]));
+      }
+    } else if (lower.endsWith(".xls") && !lower.endsWith(".xlsx")) {
+      const head = buffer.subarray(0, 2048).toString("latin1").toLowerCase();
+      const isHtmlXls = ["<html", "<table", "<script", "<!doctype", "<meta"].some((t) =>
+        head.includes(t)
+      );
+      if (isHtmlXls) {
+        for (const [sName, rawRows] of readHtmlTablesFromBuffer(buffer)) {
+          collectSheet(sName, rawRows);
+        }
+      } else {
+        const wb = XLSX.read(buffer, { type: "buffer", codepage: 874, raw: true });
+        for (const sName of wb.SheetNames) {
+          if (sName.toUpperCase().includes("COUNTER")) continue;
+          collectSheet(sName, sheetToCleanRows(wb.Sheets[sName]));
+        }
+      }
+    } else if (lower.endsWith(".xlsx") || lower.endsWith(".xlsm")) {
+      const wb = XLSX.read(buffer, { type: "buffer", codepage: 874, raw: true });
+      for (const sName of wb.SheetNames) {
+        const upper = sName.toUpperCase();
+        if (
+          upper.includes("COUNTER") ||
+          upper.includes("DASHBOARD") ||
+          upper.includes("SUMMARY")
+        ) {
+          continue;
+        }
+        collectSheet(sName, sheetToCleanRows(wb.Sheets[sName]));
+      }
+    } else {
+      return {
+        ok: false,
+        error: `ไม่รองรับนามสกุลไฟล์ ${fileName} (รองรับ .xls, .xlsx, .csv)`,
+      };
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `ไม่สามารถอ่านไฟล์ ${fileName}: ${msg}` };
+  }
+
+  if (allTransportTrips.length > 0) {
+    return {
+      ok: true,
+      fileName,
+      fileType: "transport",
+      fileTypeLabel: "รายงานการจองรถขนส่งในประเทศ (Inland Transport)",
+      isTransport: true,
+      totalRows: allTransportTrips.length,
+      transportTrips: allTransportTrips,
+      rows: [],
+      message: `ตรวจพบไฟล์นี้เป็น: รายงานการจองรถขนส่งในประเทศ (Inland Transport) ${allTransportTrips.length} เที่ยวรถ · แยกเข้าตารางเดินรถโดยเฉพาะ ไม่นับรวมในตัวเลขชิปเมนท์หลัก`,
+    };
+  }
+
+  return {
+    ok: true,
+    fileName,
+    fileType: detectedCustoms ? "customs" : "fwd",
+    fileTypeLabel: detectedCustoms
+      ? "รายงานสถานะศุลกากร (Customs Report)"
+      : "รายงาน FWD Booking Report",
+    totalRows: allRows.length,
+    rows: allRows,
+  };
+}
