@@ -333,7 +333,9 @@ def extract_transport(path):
             continue
         st = (c.get('E') or c.get('H') or '').lower()
         status = 'ส่งมอบแล้ว' if ('complete' in st or 'ส่งมอบ' in st) else ('ยกเลิก' if ('cancel' in st or 'ยกเลิก' in st) else 'กำลังวิ่ง')
-        deliver = excel_date_to_iso(c.get('G')) or excel_date_to_iso(c.get('A')) or ''
+        raw_deliver = excel_date_to_iso(c.get('G')) or excel_date_to_iso(c.get('A')) or ''
+        m_ts = re.match(r'^TS26(\d{2})', trip_no.upper())
+        deliver = fix_swapped_date(raw_deliver, int(m_ts.group(1))) if (raw_deliver and m_ts) else raw_deliver
         pod_val = clean_text(c.get('I', ''))
         container_val = clean_text(c.get('F', ''))
         trips.append({

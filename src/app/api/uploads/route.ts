@@ -137,17 +137,16 @@ export async function POST(req: NextRequest) {
           const jobsList = JSON.parse(rawJ);
           const jobMap = new Map<string, any>();
           for (const j of jobsList) {
-            if (j.jobNo) jobMap.set(j.jobNo.toUpperCase(), j);
-            if (j.jobNo && j.jobNo.startsWith("SH")) jobMap.set(j.jobNo.slice(2).toUpperCase(), j);
+            if (j.jobNo) jobMap.set(j.jobNo.trim().toUpperCase(), j);
+            if (j.joinNo) {
+              const jn = j.joinNo.trim().toUpperCase().replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
+              if (jn && !jobMap.has(jn)) jobMap.set(jn, j);
+            }
           }
           for (const trip of body.trips) {
             if (trip.jobNo) {
-              const jKey = trip.jobNo.toUpperCase();
-              const matched =
-                jobMap.get(jKey) ||
-                (jKey.startsWith("SH")
-                  ? jobMap.get(jKey.slice(2))
-                  : jobMap.get(`SH${jKey}`));
+              const jKey = trip.jobNo.trim().toUpperCase();
+              const matched = jobMap.get(jKey);
               if (matched && !matched.transportNo) {
                 matched.transportNo = trip.tripNo || trip.transportNo;
                 enrichedJobsCount++;
@@ -322,15 +321,14 @@ export async function POST(req: NextRequest) {
           if (key) existingTransMap.set(key, t);
         }
 
-        // เช็คว่ามีรายการที่ตรงกับ Job No ที่มีในระบบหรือไม่
+        // เช็คว่ามีรายการที่ตรงกับ Job No หรือ Join No ที่มีในระบบหรือไม่ (ห้ามตัด prefix SH เพราะเลขรันแยกแผนกกัน)
         const jobs = getJobs();
         const jobNoSet = new Set<string>();
         for (const j of jobs) {
-          if (j.jobNo) {
-            const jNo = j.jobNo.trim().toUpperCase();
-            jobNoSet.add(jNo);
-            if (jNo.startsWith("SH")) jobNoSet.add(jNo.slice(2));
-            else jobNoSet.add(`SH${jNo}`);
+          if (j.jobNo) jobNoSet.add(j.jobNo.trim().toUpperCase());
+          if (j.joinNo) {
+            const jn = j.joinNo.trim().toUpperCase().replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
+            if (jn) jobNoSet.add(jn);
           }
         }
 

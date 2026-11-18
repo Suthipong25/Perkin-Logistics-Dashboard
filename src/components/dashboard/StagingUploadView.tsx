@@ -249,26 +249,18 @@ export function StagingUploadView({
     }
   };
 
-  // Helper map: Existing Job Nos in current master (รองรับ SH prefix และ Join No สำหรับจับคู่งาน)
+  // Helper map: Exact Job No & Join No index (NO SH prefix stripping — SHSI26110009 and SI26110009 are different shipments!)
   const existingJobMap = useMemo(() => {
     const map = new Map<string, JobRecord>();
     for (const j of jobs) {
       if (j.jobNo) {
         const jno = j.jobNo.trim().toUpperCase();
         map.set(jno, j);
-        if (jno.startsWith("SH")) {
-          map.set(jno.slice(2), j);
-        } else {
-          map.set("SH" + jno, j);
-        }
       }
       if (j.joinNo) {
         const jjoin = j.joinNo.trim().toUpperCase().replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
-        map.set(jjoin, j);
-        if (jjoin.startsWith("SH")) {
-          map.set(jjoin.slice(2), j);
-        } else {
-          map.set("SH" + jjoin, j);
+        if (jjoin && !map.has(jjoin)) {
+          map.set(jjoin, j);
         }
       }
     }
@@ -854,20 +846,18 @@ export function StagingUploadView({
     let skippedDuplicates = 0;
     let blockedOld = 0;
 
-    // Index existing jobs for fast in-place update
+    // Index existing jobs strictly by exact Job No & Join No (no SH prefix stripping!)
     const jobIndexMap = new Map<string, number>();
     updatedJobsList.forEach((j, idx) => {
       if (j.jobNo) {
         const jn = j.jobNo.trim().toUpperCase();
         jobIndexMap.set(jn, idx);
-        if (jn.startsWith("SH")) jobIndexMap.set(jn.slice(2), idx);
-        else jobIndexMap.set("SH" + jn, idx);
       }
       if (j.joinNo) {
         const jjn = j.joinNo.trim().toUpperCase().replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
-        jobIndexMap.set(jjn, idx);
-        if (jjn.startsWith("SH")) jobIndexMap.set(jjn.slice(2), idx);
-        else jobIndexMap.set("SH" + jjn, idx);
+        if (jjn && !jobIndexMap.has(jjn)) {
+          jobIndexMap.set(jjn, idx);
+        }
       }
     });
 
@@ -1043,8 +1033,7 @@ export function StagingUploadView({
 
       const newIdx = updatedJobsList.length - 1;
       jobIndexMap.set(stgKey, newIdx);
-      if (stgKey.startsWith("SH")) jobIndexMap.set(stgKey.slice(2), newIdx);
-      else jobIndexMap.set("SH" + stgKey, newIdx);
+      if (stgJoin && !jobIndexMap.has(stgJoin)) jobIndexMap.set(stgJoin, newIdx);
     }
 
     if (applyNew === 0 && dateUpdatedCount === 0) {

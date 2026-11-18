@@ -22,10 +22,6 @@ def load_master_index():
             jno = j.get('jobNo', '').strip().upper()
             if jno:
                 by_no[jno] = j
-                if jno.startswith('SH'):
-                    by_no[jno[2:]] = j  # e.g. SHSI26100024 -> SI26100024
-                else:
-                    by_no['SH' + jno] = j
         by_join = {}
         for j in jobs:
             jraw = (j.get('joinNo') or '').strip().upper()
@@ -33,15 +29,9 @@ def load_master_index():
                 jclean = re.sub(r'\s*\((SEA|AIR)\)\s*$', '', jraw).strip()
                 by_join[jclean] = j
                 by_join[jraw] = j
-                if jclean.startswith('SH'):
-                    by_join[jclean[2:]] = j
-                else:
-                    by_join['SH' + jclean] = j
         by_bl = {}
         for j in jobs:
             if j.get('hbl'): by_bl[j['hbl'].strip().upper()] = j
-            if j.get('mbl'): by_bl[j['mbl'].strip().upper()] = j
-            if j.get('bl'): by_bl[j['bl'].strip().upper()] = j
         return by_no, by_join, by_bl
     except Exception:
         return {}, {}, {}
@@ -519,7 +509,7 @@ def parse_sheet_rows(sheet_name, raw_rows):
         except Exception:
             pass
 
-        match = by_no.get(effective_key) or (join_no and by_join.get(join_no))
+        match = by_no.get(effective_key) or by_join.get(effective_key) or (join_no and (by_no.get(join_no) or by_join.get(join_no)))
         action_type = "update" if match else "new"
         is_date_changed, diff_str, ex_etd, ex_eta, _ = check_date_diff(etd_iso, eta_iso, None, match)
 
