@@ -121,11 +121,23 @@ function mergeStagingJobRows(prev: any, incoming: any) {
   merged.isDateChanged = Boolean(merged.isDateChanged || incoming.isDateChanged);
   merged.isCustomsChanged = Boolean(merged.isCustomsChanged || incoming.isCustomsChanged);
   merged.isStatusChanged = Boolean(merged.isStatusChanged || incoming.isStatusChanged);
+  merged.isChanged = Boolean(
+    merged.isChanged ||
+    incoming.isChanged ||
+    merged.isDateChanged ||
+    merged.isCustomsChanged ||
+    merged.isStatusChanged
+  );
+  if (incoming.fileType === "customs") merged.fileType = "customs";
 
   const diffSet = new Set<string>();
   if (merged.dateChangeDiff) merged.dateChangeDiff.split(" • ").forEach((d: string) => diffSet.add(d.trim()));
   if (incoming.dateChangeDiff) incoming.dateChangeDiff.split(" • ").forEach((d: string) => diffSet.add(d.trim()));
   merged.dateChangeDiff = Array.from(diffSet).filter(Boolean).join(" • ");
+
+  if (merged.actionType === "update" && merged.dateChangeDiff) {
+    merged.validationNote = `🔄 อัปเดตข้อมูล: ${merged.dateChangeDiff} (อัปเดตทับงานเดิม ไม่เพิ่มแถว)`;
+  }
 
   return merged;
 }
@@ -483,6 +495,7 @@ export async function POST(req: NextRequest) {
 
       const combinedTripsMap = new Map<string, any>();
       const combinedJobsMap = new Map<string, any>();
+      const joinToPrimaryMap = new Map<string, string>();
 
       for (const file of rawFileList) {
         const bytes = await file.arrayBuffer();
@@ -618,13 +631,26 @@ export async function POST(req: NextRequest) {
           let actionableJobs = 0;
           for (const rawR of parsed.rows) {
             const r = rawR as any;
-            const key = String(r.jobNo || "").trim().toUpperCase();
-            if (!key) continue;
+            const rawKey = stripModeSuffix(String(r.jobNo || ""));
+            const rawJoin = stripModeSuffix(String(r.joinNo || ""));
+            if (!rawKey && !rawJoin) continue;
 
-            const existing = existingJobMap.get(key);
+            const existing =
+              (rawKey ? existingJobMap.get(rawKey) : undefined) ||
+              (rawJoin ? existingJobMap.get(rawJoin) : undefined);
             const exists = Boolean(existing);
 
-            const isExp = /^(SH)?(SE|AE)/i.test(key);
+            const canonicalKey = existing
+              ? stripModeSuffix(existing.jobNo)
+              : (rawKey && joinToPrimaryMap.get(rawKey)) ||
+                (rawJoin && joinToPrimaryMap.get(rawJoin)) ||
+                rawKey ||
+                rawJoin;
+
+            if (rawKey) joinToPrimaryMap.set(rawKey, canonicalKey);
+            if (rawJoin) joinToPrimaryMap.set(rawJoin, canonicalKey);
+
+            const isExp = /^(SH)?(SE|AE)/i.test(canonicalKey);
             const opDate = isExp
               ? String(r.etd || r.submitDate || r.eta || "")
               : String(r.eta || r.submitDate || r.etd || "");
@@ -640,15 +666,18 @@ export async function POST(req: NextRequest) {
 
             const currentStg = {
               ...r,
+              jobNo: canonicalKey,
+              joinNo: rawJoin && rawJoin !== canonicalKey ? rawJoin : (rawKey !== canonicalKey ? rawKey : r.joinNo || ""),
+              fileType: parsed.fileType || "fwd",
               isPastOrOld,
               isBlankDummy,
               isGenuineNew,
             };
 
-            if (combinedJobsMap.has(key)) {
-              combinedJobsMap.set(key, mergeStagingJobRows(combinedJobsMap.get(key), currentStg));
+            if (combinedJobsMap.has(canonicalKey)) {
+              combinedJobsMap.set(canonicalKey, mergeStagingJobRows(combinedJobsMap.get(canonicalKey), currentStg));
             } else {
-              combinedJobsMap.set(key, currentStg);
+              combinedJobsMap.set(canonicalKey, currentStg);
             }
           }
 

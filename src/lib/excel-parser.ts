@@ -268,7 +268,7 @@ function checkJobDiff(
   const dateDiffs: string[] = [];
   if (incEtd && incEtd !== exEtd) dateDiffs.push(`ETD: ${exEtd || "-"} ➔ ${incEtd}`);
   if (incEta && incEta !== exEta) dateDiffs.push(`ETA: ${exEta || "-"} ➔ ${incEta}`);
-  if (incTime && incTime !== exTime) dateDiffs.push(`เวลา: ${exTime || "-"} ➔ ${incTime}`);
+  if (incTime && exTime && incTime !== exTime) dateDiffs.push(`เวลา: ${exTime} ➔ ${incTime}`);
   if (incClear && incClear !== exClear) dateDiffs.push(`ตรวจปล่อย: ${exClear || "-"} ➔ ${incClear}`);
   const isDateChanged = dateDiffs.length > 0;
 
@@ -283,10 +283,14 @@ function checkJobDiff(
   }
 
   const rank = (s?: string | null) => ["0109", "0209", "0309", "0409"].indexOf(s || "");
+  const effectiveExCustoms =
+    matchJob.customsStatus ||
+    (["0109", "0209", "0309", "0409"].includes(String(matchJob.updateStatus || "")) ? String(matchJob.updateStatus) : null) ||
+    (matchJob.cleared || matchJob.status === "Completed" ? "0409" : matchJob.customsFiled || matchJob.declarationNo ? "0309" : null);
   const incRank = rank(incoming.customsStatus);
-  const exRank = rank(matchJob.customsStatus);
-  if (incoming.customsStatus && (incRank > exRank || (!matchJob.customsStatus && incRank >= 0))) {
-    customsDiffs.push(`สถานะใบขน: ${matchJob.customsStatus || "-"} ➔ ${incoming.customsStatus}`);
+  const exRank = rank(effectiveExCustoms);
+  if (incoming.customsStatus && incRank > exRank) {
+    customsDiffs.push(`สถานะใบขน: ${effectiveExCustoms || "-"} ➔ ${incoming.customsStatus}`);
   }
   const isCustomsChanged = customsDiffs.length > 0;
 
@@ -299,15 +303,10 @@ function checkJobDiff(
   const isStatusChanged = statusDiffs.length > 0;
 
   const metaDiffs: string[] = [];
-  const incVessel = String(incoming.vessel || incoming.feeder || "").trim();
-  const exVessel = String(matchJob.vessel || matchJob.feeder || "").trim();
-  if (incVessel && incVessel !== exVessel && !exVessel) {
-    metaDiffs.push(`สายเรือ: ${incVessel}`);
-  }
-  const incFlight = String(incoming.flightNo || "").trim();
-  const exFlight = String(matchJob.flightNo || "").trim();
-  if (incFlight && incFlight !== exFlight && !exFlight) {
-    metaDiffs.push(`เที่ยวบิน: ${incFlight}`);
+  const incBl = String(incoming.bl || "").trim();
+  const exBl = String(matchJob.bl || matchJob.hbl || matchJob.mbl || "").trim();
+  if (incBl && incBl !== "—" && (!exBl || exBl === "—")) {
+    metaDiffs.push(`BL: ${incBl}`);
   }
   const incCs = String(incoming.csName || "").trim();
   const exCs = String(matchJob.csName || "").trim();
@@ -503,9 +502,11 @@ function parseFwdAir2Row(rawRows: string[][], idx: MasterIndex) {
         idx.byNo.get(jobClean) ||
         (hawb ? idx.byBl.get(hawb.toUpperCase()) : undefined);
       const actionType = match ? "update" : "new";
+      const isAirExp = /^(SH)?AE/i.test(jobClean);
+      const airEtdIso = isAirExp ? jobDateIso : null;
       const { isChanged, isDateChanged, isCustomsChanged, isStatusChanged, diffStr, exEtd, exEta, exTime, note } = checkJobDiff(
         {
-          etdIso: jobDateIso,
+          etdIso: airEtdIso,
           etaIso,
           flightTime,
           flightNo: flight,
@@ -527,7 +528,7 @@ function parseFwdAir2Row(rawRows: string[][], idx: MasterIndex) {
         referenceNo: hawb || mawb,
         status: "In Progress",
         customsStatus: null,
-        etd: jobDateIso,
+        etd: airEtdIso,
         eta: etaIso,
         submitDate: jobDateIso,
         containerType: "AIR CARGO",

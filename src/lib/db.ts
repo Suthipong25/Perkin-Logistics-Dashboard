@@ -20,9 +20,7 @@ export function getDbPool(): Pool | null {
 
 export function getLocalDbPool(): Pool | null {
   if (process.env.VERCEL) return null;
-  const connStr =
-    process.env.DATABASE_URL_LOCAL ||
-    "postgresql://postgres:Perkin2Logistics@192.168.1.153:5432/Test001";
+  const connStr = process.env.DATABASE_URL_LOCAL;
   if (!connStr) return null;
   if (!localPool) {
     localPool = new Pool({
@@ -113,6 +111,13 @@ export async function fetchJobsFromPostgres(): Promise<JobRecord[] | null> {
     `);
     return res.rows.map((row) => ({
       ...row,
+      customsStatus: ["0109", "0209", "0309", "0409"].includes(String(row.updateStatus || ""))
+        ? String(row.updateStatus)
+        : row.cleared || row.status === "Completed"
+        ? "0409"
+        : row.customsFiled || Boolean(row.declarationNo)
+        ? "0309"
+        : undefined,
       grossWeight: row.grossWeight ? Number(row.grossWeight) : 0,
       cbm: row.cbm ? Number(row.cbm) : 0,
       flags: Array.isArray(row.flags) ? row.flags : [],
@@ -251,20 +256,28 @@ const JOB_COLS = [
 ];
 
 async function executeJobsUpsertOnPool(poolInstance: Pool, jobs: JobRecord[], chunkSize = 100): Promise<number> {
+  // Deduplicate by primary key `id` to prevent PostgreSQL "ON CONFLICT DO UPDATE command cannot affect row a second time"
+  const dedupedMap = new Map<string, JobRecord>();
+  jobs.forEach((j, idx) => {
+    const rowId = j.id || `${j.month || "M"}_${j.sourceRow || (idx + 1)}_${j.jobNo || "UNKNOWN"}`;
+    dedupedMap.set(rowId, { ...j, id: rowId });
+  });
+  const uniqueJobs = Array.from(dedupedMap.values());
+
   const client: PoolClient = await poolInstance.connect();
   let totalProcessed = 0;
 
   try {
     await client.query("BEGIN");
 
-    for (let i = 0; i < jobs.length; i += chunkSize) {
-      const chunk = jobs.slice(i, i + chunkSize);
+    for (let i = 0; i < uniqueJobs.length; i += chunkSize) {
+      const chunk = uniqueJobs.slice(i, i + chunkSize);
       const valueRows: string[] = [];
       const params: any[] = [];
       let pIdx = 1;
 
       for (const j of chunk) {
-        const rowId = j.id || `${j.month || "M"}_${j.sourceRow || (i + 1)}_${j.jobNo || "UNKNOWN"}`;
+        const rowId = j.id;
         const rowPlaceholders: string[] = [];
         const rowVals = [
           rowId,
@@ -280,7 +293,7 @@ async function executeJobsUpsertOnPool(poolInstance: Pool, jobs: JobRecord[], ch
           j.mbl || "",
           j.hbl || "",
           j.joinNo || "",
-          j.updateStatus || "",
+          j.customsStatus || j.updateStatus || "",
           sanitizeDate(j.etd),
           sanitizeDate(j.eta),
           sanitizeDate(j.jobDate),
@@ -378,14 +391,22 @@ const TRANSPORT_COLS = [
 ];
 
 async function executeTransportUpsertOnPool(poolInstance: Pool, trips: any[], chunkSize = 100): Promise<number> {
+  // Deduplicate by primary key `trip_no` to prevent PostgreSQL "ON CONFLICT DO UPDATE command cannot affect row a second time"
+  const dedupedTripsMap = new Map<string, any>();
+  for (const t of trips) {
+    const tripNo = (t.tripNo || t.transportNo || "").trim();
+    if (tripNo) dedupedTripsMap.set(tripNo, t);
+  }
+  const uniqueTrips = Array.from(dedupedTripsMap.values());
+
   const client: PoolClient = await poolInstance.connect();
   let totalProcessed = 0;
 
   try {
     await client.query("BEGIN");
 
-    for (let i = 0; i < trips.length; i += chunkSize) {
-      const chunk = trips.slice(i, i + chunkSize);
+    for (let i = 0; i < uniqueTrips.length; i += chunkSize) {
+      const chunk = uniqueTrips.slice(i, i + chunkSize);
       const valueRows: string[] = [];
       const params: any[] = [];
       let pIdx = 1;

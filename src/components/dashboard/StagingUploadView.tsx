@@ -677,7 +677,9 @@ export function StagingUploadView({
           const effectiveKey = (r.jobNo || r.joinNo || "").replace(/\s*\((SEA|AIR)\)\s*$/i, "").toUpperCase();
           const existing = existingJobMap.get(effectiveKey);
           const existsInMaster = Boolean(existing);
-          const rowIsCustoms = r.fileType === "customs" || isCustomsDetected;
+          const rowIsCustoms = r.fileType
+            ? r.fileType === "customs"
+            : Boolean(r.declarationNo || r.customsStatus || isCustomsDetected);
 
           // Business Rule: Export uses ETD, Import uses ETA
           const isExportJob = /^(SH)?(SE|AE)/i.test(effectiveKey);
@@ -692,7 +694,7 @@ export function StagingUploadView({
           const normDate = (d?: string | null) => (d ? String(d).trim().slice(0, 10) : "");
           const normTime = (t?: string | null) => (t && t.trim() !== "00:00" ? t.trim() : "");
 
-          const incEtd = normDate(r.etd || (rowIsCustoms ? null : r.submitDate));
+          const incEtd = normDate(r.etd || (isExportJob && !rowIsCustoms ? r.submitDate : null));
           const incEta = normDate(r.eta);
           const incTime = normTime(r.flightTime);
 
@@ -703,28 +705,33 @@ export function StagingUploadView({
           const dateDiffs: string[] = [];
           if (incEtd && incEtd !== exEtd) dateDiffs.push(`ETD: ${exEtd || "-"} ➔ ${incEtd}`);
           if (incEta && incEta !== exEta) dateDiffs.push(`ETA: ${exEta || "-"} ➔ ${incEta}`);
-          if (incTime && incTime !== exTime) dateDiffs.push(`เวลา: ${exTime || "-"} ➔ ${incTime}`);
+          if (incTime && exTime && incTime !== exTime) dateDiffs.push(`เวลา: ${exTime} ➔ ${incTime}`);
           const isDateChanged = existsInMaster && dateDiffs.length > 0;
           const dateChangeDiff = dateDiffs.join(" • ");
 
           const customsDiffs: string[] = [];
+          const isInvalidDecl = (d?: string | null) =>
+            !d || ["-", "—", "N/A", "NONE", "NULL", "NORMAL", "GENERAL", "IMPORT", "EXPORT", "TRANSIT", "RE-EXPORT"].includes(String(d).trim().toUpperCase());
           const incomingDeclaration = r.declarationNo?.trim();
           const existingDeclaration = existing?.declarationNo?.trim();
-          if (rowIsCustoms && incomingDeclaration && incomingDeclaration !== existingDeclaration) {
+          if (!isInvalidDecl(incomingDeclaration) && incomingDeclaration !== existingDeclaration) {
             customsDiffs.push(`เลขใบขน: ${existingDeclaration || "-"} ➔ ${incomingDeclaration}`);
           }
-          const incomingCustomsDate = rowIsCustoms ? r.submitDate?.trim() : "";
-          const existingCustomsDate = existing?.customsDate?.trim() || "";
-          if (incomingCustomsDate && incomingCustomsDate !== existingCustomsDate) {
-            customsDiffs.push(`วันที่ยื่นใบขน: ${existingCustomsDate || "-"} ➔ ${incomingCustomsDate}`);
+          const incClearDate = normDate(r.clearDate);
+          const exClearDate = normDate(existing?.clearDate);
+          if (incClearDate && incClearDate !== exClearDate) {
+            customsDiffs.push(`วันตรวจปล่อย: ${exClearDate || "-"} ➔ ${incClearDate}`);
           }
+          const effectiveExCustoms =
+            existing?.customsStatus ||
+            (["0109", "0209", "0309", "0409"].includes(String(existing?.updateStatus || "")) ? String(existing?.updateStatus) : null) ||
+            (existing?.cleared || existing?.status === "Completed" ? "0409" : existing?.customsFiled || existing?.declarationNo ? "0309" : null);
           if (
-            rowIsCustoms &&
             existing &&
             r.customsStatus &&
-            customsRank(r.customsStatus) > customsRank(existing.customsStatus)
+            customsRank(r.customsStatus) > customsRank(effectiveExCustoms)
           ) {
-            customsDiffs.push(`สถานะใบขน: ${existing.customsStatus || "-"} ➔ ${r.customsStatus}`);
+            customsDiffs.push(`สถานะใบขน: ${effectiveExCustoms || "-"} ➔ ${r.customsStatus}`);
           }
           const isCustomsChanged = existsInMaster && customsDiffs.length > 0;
           const customsChangeDiff = customsDiffs.join(" • ");
