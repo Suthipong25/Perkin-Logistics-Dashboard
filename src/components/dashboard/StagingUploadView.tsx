@@ -103,6 +103,8 @@ export interface StagingTransportRecord {
   actionType: "new" | "update";
   isNew: boolean;
   isDateChanged?: boolean;
+  isDriverChanged?: boolean;
+  isPlateChanged?: boolean;
   oldDeliverDate?: string | null;
   dateChangeDiff?: string;
   hasLinkedJob: boolean;
@@ -131,6 +133,8 @@ export function StagingUploadView({
   showToast,
 }: StagingUploadViewProps) {
   const [uploadFile, setUploadFile] = useState<{ name: string; size: number } | null>(null);
+  const [uploadedFilesList, setUploadedFilesList] = useState<Array<{ name: string; size: number }>>([]);
+  const [autoApplyOnDrop, setAutoApplyOnDrop] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<number>(-1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -160,6 +164,13 @@ export function StagingUploadView({
 
   // Selection state for selective upload (เลือกเฉพาะงานใหม่ประจำงวดที่ต้องการนำเข้า)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem("perkin_auto_apply_upload");
+      if (saved === "true") setAutoApplyOnDrop(true);
+    } catch {}
+  }, []);
 
   // Keep old jobs locked against re-import while allowing in-place updates to existing jobs.
   const isSelectable = (r: StagingRecord) => {
@@ -236,16 +247,16 @@ export function StagingUploadView({
     });
   };
 
-    const handleSelectSafeTransportOnly = () => {
+  const handleSelectSafeTransportOnly = () => {
     if (stagingTransport) {
       const safeIds = new Set<string>();
       for (const t of stagingTransport) {
-        if (t.isNew || t.actionType === "new" || t.isDateChanged) {
+        if (t.isNew || t.actionType === "new" || t.isDateChanged || t.isDriverChanged || t.isPlateChanged) {
           safeIds.add(t.id);
         }
       }
       setSelectedTransportIds(safeIds);
-      showToast(`เลือกเฉพาะเที่ยวใหม่และอัปเดตวันส่งมอบแล้ว (${safeIds.size} เที่ยว) • ข้ามเที่ยวเดิม`);
+      showToast(`เลือกเฉพาะเที่ยวใหม่และอัปเดตข้อมูลแล้ว (${safeIds.size} เที่ยว) • ข้ามเที่ยวเดิม`);
     }
   };
 
@@ -510,13 +521,25 @@ export function StagingUploadView({
   };
 
   /* ==========================================================================
-   * 3. HANDLE FILE DROP / INPUT (รองรับทั้ง .xlsx, .xls, .csv ผ่าน Server Parser)
+   * 3. HANDLE FILE DROP / INPUT (รองรับหลายไฟล์พร้อมกัน Multi-File Drop)
    * ========================================================================== */
-  const handleNativeFileUpload = async (file: File) => {
-    setUploadFile({ name: file.name, size: file.size });
+  const handleClearAll = () => {
+    setStagingData(null);
+    setStagingTransport(null);
+    setUploadFile(null);
+    setUploadedFilesList([]);
+    setUploadProgress(-1);
+    setUploadSummary(null);
+  };
+
+  const handleNativeFilesUpload = async (files: File[]) => {
+    if (!files || files.length === 0) return;
+    setUploadedFilesList(files.map((f) => ({ name: f.name, size: f.size })));
+    setUploadFile({ name: files.length === 1 ? files[0].name : `${files.length} ไฟล์`, size: files.reduce((acc, f) => acc + f.size, 0) });
     setIsProcessing(true);
     setUploadProgress(0);
     setStagingData(null);
+    setStagingTransport(null);
     setUploadSummary(null);
 
     // ขั้นที่ 1: ตรวจสอบและส่งไฟล์ไปยัง API Staging Parser
@@ -524,9 +547,14 @@ export function StagingUploadView({
 
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      for (const file of files) {
+        formData.append("files", file);
+      }
+      if (autoApplyOnDrop) {
+        formData.append("autoApply", "true");
+      }
 
-      // ขั้นที่ 2: ถอดรหัสโครงสร้างไฟล์ Excel (.xlsx) / CSV
+      // ขั้นที่ 2: ถอดรหัสโครงสร้างไฟล์ Excel (.xlsx, .xls) / CSV
       setUploadProgress(2);
 
       const resp = await fetch("/api/uploads", {
@@ -534,7 +562,7 @@ export function StagingUploadView({
         body: formData,
       });
 
-      // ขั้นที่ 3: ตรวจสอบความถูกต้องและจับคู่ Job No กับฐาน 1,129 งาน
+      // ขั้นที่ 3: ตรวจสอบความถูกต้องและจับคู่ Job No
       setUploadProgress(3);
 
       const data = await resp.json();
@@ -543,35 +571,19 @@ export function StagingUploadView({
         throw new Error(data.error || "ไม่สามารถอ่านไฟล์ได้");
       }
 
-      // ตรวจพบไฟล์การจองรถขนส่ง (Inland Transport) -> แสดงผลตาราง Transport Staging ให้ตรวจเช็กก่อนนำเข้า
-      if (data.isTransport && Array.isArray(data.transportTrips)) {
+      // Fast-path: Auto-applied directly (โหมดซิงค์อัตโนมัติ)
+      if (data.autoApplied) {
         setUploadProgress(4);
         setIsProcessing(false);
-        setStagingData(null);
-        setStagingTransport(data.transportTrips);
-
-        // ติ๊กเลือกเฉพาะเที่ยวรถใหม่เป็นค่าเริ่มต้น (ไม่เลือกเที่ยวเดิมซ้ำ)
-        const newIds = new Set<string>();
-        for (const t of data.transportTrips) {
-          if (t.isNew || t.actionType === "new") {
-            newIds.add(t.id);
-          }
+        const msg = data.message || `⚡ ซิงค์อัตโนมัติสำเร็จ ${files.length} ไฟล์!`;
+        if (Array.isArray(data.jobs) && data.jobs.length > 0) {
+          onApplyUpload(data.jobs, msg);
         }
-        setSelectedTransportIds(newIds);
-        setTransportFilter(newIds.size > 0 ? "new" : "all");
-        setTransportPage(1);
-
-        setUploadSummary({
-          fileName: file.name,
-          fileType: "รายงานการจองรถขนส่งในประเทศ (Inland Transport)",
-          rows: data.transportTrips.length,
-          newJobs: data.newTripsCount || newIds.size,
-          updatedJobs: data.existingTripsCount || (data.transportTrips.length - newIds.size),
-        });
-
-        showToast(
-          `ตรวจพบรายงานการจองรถ ${data.transportTrips.length} เที่ยวรถ · แสดงตารางตรวจสอบเที่ยวรถก่อนนำเข้า`
-        );
+        if (Array.isArray(data.transport) && data.transport.length > 0 && onApplyTransportUpload) {
+          onApplyTransportUpload(data.transport, msg);
+        }
+        showToast(msg);
+        handleClearAll();
         return;
       }
 
@@ -581,10 +593,39 @@ export function StagingUploadView({
         setIsProcessing(false);
         const msg = data.message || `อัปเดตข้อมูล Master สำเร็จ (${data.totalJobs} งาน)`;
         onApplyUpload(data.jobs || jobs, msg);
+        if (Array.isArray(data.transport) && onApplyTransportUpload) {
+          onApplyTransportUpload(data.transport, msg);
+        }
         showToast(msg);
+        handleClearAll();
         return;
       }
 
+      setUploadProgress(4);
+      setIsProcessing(false);
+
+      // 1. ตรวจพบข้อมูลเที่ยวรถขนส่ง (Inland Transport)
+      let parsedTransports: StagingTransportRecord[] = [];
+      if (Array.isArray(data.transportTrips) && data.transportTrips.length > 0) {
+        parsedTransports = data.transportTrips;
+        setStagingTransport(parsedTransports);
+
+        // ติ๊กเลือกเฉพาะเที่ยวรถใหม่ และเที่ยวที่เปลี่ยนวันส่งมอบ/คนขับ/ทะเบียน เป็นค่าเริ่มต้น
+        const actionableTransIds = new Set<string>();
+        for (const t of parsedTransports) {
+          if (t.isNew || t.actionType === "new" || t.isDateChanged || t.isDriverChanged || t.isPlateChanged) {
+            actionableTransIds.add(t.id);
+          }
+        }
+        setSelectedTransportIds(actionableTransIds);
+
+        const countNewT = parsedTransports.filter((t) => t.isNew || t.actionType === "new").length;
+        const countUpdateT = parsedTransports.filter((t) => (!t.isNew || t.actionType === "update") && (t.isDateChanged || t.isDriverChanged || t.isPlateChanged)).length;
+        setTransportFilter(countNewT > 0 ? "new" : countUpdateT > 0 ? "date_updates" : "all");
+        setTransportPage(1);
+      }
+
+      // 2. ตรวจพบข้อมูลชิปเมนท์หลัก (Shipping / FWD / Air Freight)
       interface ApiRow {
         id?: string;
         jobNo?: string;
@@ -621,258 +662,264 @@ export function StagingUploadView({
         depoPort?: string;
         placeOfDelivery?: string;
         loadingDate?: string;
+        fileType?: string;
         validationStatus?: "valid" | "warning";
         validationNote?: string;
       }
 
-      const rows: ApiRow[] = data.rows || [];
-      const isCustomsFile = data.fileType === "customs";
-      const parsed: StagingRecord[] = rows.map((r: ApiRow, idx: number) => {
-        const effectiveKey = (r.jobNo || r.joinNo || "").replace(/\s*\((SEA|AIR)\)\s*$/i, "").toUpperCase();
-        const existing = existingJobMap.get(effectiveKey);
-        const existsInMaster = Boolean(existing);
-        
-        // Business Rule: Export uses ETD, Import uses ETA (so Oct-ETD / Nov-ETA Import jobs belong to Nov!)
-        const isExportJob = /^(SH)?(SE|AE)/i.test(effectiveKey);
-        const opDate = isExportJob
-          ? (r.etd || r.submitDate || r.eta || "")
-          : (r.eta || r.submitDate || r.etd || "");
-        const isPastOrOld = !existsInMaster && Boolean(opDate && opDate < "2026-11-01");
-        const isBlankDummy = !existsInMaster && !r.containerType && !r.grossWeight && !r.bl && !r.commodity;
-        const isGenuineNew = !existsInMaster && !isPastOrOld && !isBlankDummy;
+      const rows: ApiRow[] = Array.isArray(data.rows) ? data.rows : [];
+      let parsedJobs: StagingRecord[] = [];
 
-        // Date Change Detection (ETD / ETA / Flight Time update on existing job)
-        const normDate = (d?: string | null) => (d ? String(d).trim().slice(0, 10) : "");
-        const normTime = (t?: string | null) => (t && t.trim() !== "00:00" ? t.trim() : "");
+      if (rows.length > 0) {
+        const isCustomsDetected = data.files?.some((f: any) => f.fileType === "customs") || data.fileType === "customs";
 
-        const incEtd = normDate(r.etd || (isCustomsFile ? null : r.submitDate));
-        const incEta = normDate(r.eta);
-        const incTime = normTime(r.flightTime);
+        parsedJobs = rows.map((r: ApiRow, idx: number) => {
+          const effectiveKey = (r.jobNo || r.joinNo || "").replace(/\s*\((SEA|AIR)\)\s*$/i, "").toUpperCase();
+          const existing = existingJobMap.get(effectiveKey);
+          const existsInMaster = Boolean(existing);
+          const rowIsCustoms = r.fileType === "customs" || isCustomsDetected;
 
-        const exEtd = normDate(existing?.etd || existing?.submitDate);
-        const exEta = normDate(existing?.eta);
-        const exTime = normTime(existing?.flightTime);
+          // Business Rule: Export uses ETD, Import uses ETA
+          const isExportJob = /^(SH)?(SE|AE)/i.test(effectiveKey);
+          const opDate = isExportJob
+            ? (r.etd || r.submitDate || r.eta || "")
+            : (r.eta || r.submitDate || r.etd || "");
+          const isPastOrOld = !existsInMaster && Boolean(opDate && opDate < "2026-11-01");
+          const isBlankDummy = !existsInMaster && !r.containerType && !r.grossWeight && !r.bl && !r.commodity;
+          const isGenuineNew = !existsInMaster && !isPastOrOld && !isBlankDummy;
 
-        const dateDiffs: string[] = [];
-        if (incEtd && incEtd !== exEtd) dateDiffs.push(`ETD: ${exEtd || "-"} ➔ ${incEtd}`);
-        if (incEta && incEta !== exEta) dateDiffs.push(`ETA: ${exEta || "-"} ➔ ${incEta}`);
-        if (incTime && incTime !== exTime) dateDiffs.push(`เวลา: ${exTime || "-"} ➔ ${incTime}`);
-        const isDateChanged = existsInMaster && dateDiffs.length > 0;
-        const dateChangeDiff = dateDiffs.join(" • ");
+          // Date Change Detection (ETD / ETA / Flight Time update on existing job)
+          const normDate = (d?: string | null) => (d ? String(d).trim().slice(0, 10) : "");
+          const normTime = (t?: string | null) => (t && t.trim() !== "00:00" ? t.trim() : "");
 
-        const customsDiffs: string[] = [];
-        const incomingDeclaration = r.declarationNo?.trim();
-        const existingDeclaration = existing?.declarationNo?.trim();
-        if (isCustomsFile && incomingDeclaration && incomingDeclaration !== existingDeclaration) {
-          customsDiffs.push(`เลขใบขน: ${existingDeclaration || "-"} ➔ ${incomingDeclaration}`);
-        }
-        const incomingCustomsDate = isCustomsFile ? r.submitDate?.trim() : "";
-        const existingCustomsDate = existing?.customsDate?.trim() || "";
-        if (incomingCustomsDate && incomingCustomsDate !== existingCustomsDate) {
-          customsDiffs.push(`วันที่ยื่นใบขน: ${existingCustomsDate || "-"} ➔ ${incomingCustomsDate}`);
-        }
-        // Only move the customs pipeline forward; never downgrade an existing status.
-        if (
-          isCustomsFile &&
-          existing &&
-          r.customsStatus &&
-          customsRank(r.customsStatus) > customsRank(existing.customsStatus)
-        ) {
-          customsDiffs.push(`สถานะใบขน: ${existing.customsStatus || "-"} ➔ ${r.customsStatus}`);
-        }
-        const isCustomsChanged = existsInMaster && customsDiffs.length > 0;
-        const customsChangeDiff = customsDiffs.join(" • ");
+          const incEtd = normDate(r.etd || (rowIsCustoms ? null : r.submitDate));
+          const incEta = normDate(r.eta);
+          const incTime = normTime(r.flightTime);
 
-        // Explicit STATUS JOB change detection (e.g. Shipping report Job Control -> Job Complete)
-        const incStatus = r.status || "";
-        const incStatusDetail = r.statusDetail || "";
-        const exStatus = existing?.status || "";
-        const exStatusDetail = existing?.statusDetail || "";
-        const isStatusChanged = Boolean(
-          existsInMaster &&
-          r.hasExplicitStatus &&
-          incStatus &&
-          (incStatus !== exStatus || (incStatusDetail && incStatusDetail !== exStatusDetail))
-        );
-        const statusChangeDiff = isStatusChanged
-          ? `สถานะ: ${exStatusDetail || exStatus || "-"} ➔ ${incStatusDetail || incStatus}`
-          : "";
+          const exEtd = normDate(existing?.etd || existing?.submitDate);
+          const exEta = normDate(existing?.eta);
+          const exTime = normTime(existing?.flightTime);
 
-        let note = r.validationNote || (!effectiveKey ? "ไม่มีเลข Job No" : undefined);
-        let vStatus: "valid" | "warning" = (r.declarationNo || r.etd || r.eta || effectiveKey ? "valid" : "warning");
+          const dateDiffs: string[] = [];
+          if (incEtd && incEtd !== exEtd) dateDiffs.push(`ETD: ${exEtd || "-"} ➔ ${incEtd}`);
+          if (incEta && incEta !== exEta) dateDiffs.push(`ETA: ${exEta || "-"} ➔ ${incEta}`);
+          if (incTime && incTime !== exTime) dateDiffs.push(`เวลา: ${exTime || "-"} ➔ ${incTime}`);
+          const isDateChanged = existsInMaster && dateDiffs.length > 0;
+          const dateChangeDiff = dateDiffs.join(" • ");
 
-        if (existsInMaster) {
-          if (isDateChanged || isCustomsChanged || isStatusChanged) {
-            vStatus = "valid";
-            note = `🔄 อัปเดต: ${[statusChangeDiff, dateChangeDiff, customsChangeDiff].filter(Boolean).join(" • ")} (อัปเดตทับงานเดิม ไม่เพิ่มแถวใหม่)`;
-          } else {
-            note = "⚪ งานเดิมในระบบแล้ว (ไม่มีข้อมูลใบขน สถานะ หรือกำหนดการเปลี่ยนแปลง)";
+          const customsDiffs: string[] = [];
+          const incomingDeclaration = r.declarationNo?.trim();
+          const existingDeclaration = existing?.declarationNo?.trim();
+          if (rowIsCustoms && incomingDeclaration && incomingDeclaration !== existingDeclaration) {
+            customsDiffs.push(`เลขใบขน: ${existingDeclaration || "-"} ➔ ${incomingDeclaration}`);
           }
-        } else {
-          if (isPastOrOld) {
-            vStatus = "warning";
-            note = `งานย้อนหลังเดือนเก่า (${opDate.slice(0, 7)}) — ปลดเลือกอัตโนมัติเพื่อป้องกันยอดเดือนเก่าบวม`;
-          } else if (isBlankDummy) {
-            vStatus = "warning";
-            note = `งานว่างเปล่า (ไม่มีตู้/สินค้า/BL) — ปลดเลือกอัตโนมัติ`;
-          } else {
-            note = `งานใหม่ประจำงวด (${opDate.slice(0, 7) || "2026-11"})`;
+          const incomingCustomsDate = rowIsCustoms ? r.submitDate?.trim() : "";
+          const existingCustomsDate = existing?.customsDate?.trim() || "";
+          if (incomingCustomsDate && incomingCustomsDate !== existingCustomsDate) {
+            customsDiffs.push(`วันที่ยื่นใบขน: ${existingCustomsDate || "-"} ➔ ${incomingCustomsDate}`);
           }
-        }
+          if (
+            rowIsCustoms &&
+            existing &&
+            r.customsStatus &&
+            customsRank(r.customsStatus) > customsRank(existing.customsStatus)
+          ) {
+            customsDiffs.push(`สถานะใบขน: ${existing.customsStatus || "-"} ➔ ${r.customsStatus}`);
+          }
+          const isCustomsChanged = existsInMaster && customsDiffs.length > 0;
+          const customsChangeDiff = customsDiffs.join(" • ");
 
-        return {
-          id: r.id || `row-${idx}-${effectiveKey}`,
-          jobNo: effectiveKey,
-          joinNo: r.joinNo || undefined,
-          actionType: existsInMaster ? "update" : "new",
-          fileType: (data.fileType === "customs" ? "customs" : "fwd") as "customs" | "fwd",
-          customer: r.customer && r.customer !== "—" ? r.customer : (existsInMaster ? existingJobMap.get(effectiveKey)?.customer || "—" : "ลูกค้าใหม่"),
-          declarationNo:
-            r.declarationNo && !["NORMAL", "GENERAL", "IMPORT", "EXPORT", "RE-EXPORT", "TRANSIT"].includes(r.declarationNo.trim().toUpperCase())
-              ? r.declarationNo
-              : undefined,
-          invoiceNo: r.invoiceNo || undefined,
-          status: r.status || (r.customsStatus === "0409" ? "Completed" : "In Progress"),
-          statusDetail: r.statusDetail || undefined,
-          statusRaw: r.statusRaw || undefined,
-          hasExplicitStatus: Boolean(r.hasExplicitStatus),
-          clearDate: r.clearDate || null,
-          customsStatus: r.customsStatus || null,
-          etd: r.etd || (isCustomsFile ? null : r.submitDate) || null,
-          eta: r.eta || null,
-          submitDate: r.submitDate || null,
-          containerType: r.containerType || undefined,
-          grossWeight: r.grossWeight ?? null,
-          cbm: r.cbm ?? null,
-          csName: r.csName || undefined,
-          bl: r.bl || undefined,
-          commodity: r.commodity || undefined,
-          carrier: r.carrier || undefined,
-          vessel: r.vessel || r.feeder || undefined,
-          feeder: r.feeder || r.vessel || undefined,
-          flightNo: r.flightNo || undefined,
-          flightTime: r.flightTime || undefined,
-          linerBooking: r.linerBooking || undefined,
-          pol: r.pol || undefined,
-          pod: r.pod || undefined,
-          terminal: r.terminal || undefined,
-          shed: r.shed || undefined,
-          depoPort: r.depoPort || undefined,
-          placeOfDelivery: r.placeOfDelivery || undefined,
-          loadingDate: r.loadingDate || undefined,
-          isPastOrOld,
-          isBlankDummy,
-          isGenuineNew,
-          isDateChanged,
-          isCustomsChanged,
-          isStatusChanged,
-          oldStatus: exStatusDetail || exStatus || null,
-          statusChangeDiff,
-          customsChangeDiff,
-          oldEtd: exEtd || null,
-          oldEta: exEta || null,
-          oldFlightTime: exTime || null,
-          dateChangeDiff,
-          validationStatus: vStatus,
-          validationNote: note,
-        };
-      });
+          // Explicit STATUS JOB change detection
+          const incStatus = r.status || "";
+          const incStatusDetail = r.statusDetail || "";
+          const exStatus = existing?.status || "";
+          const exStatusDetail = existing?.statusDetail || "";
+          const isStatusChanged = Boolean(
+            existsInMaster &&
+            r.hasExplicitStatus &&
+            incStatus &&
+            (incStatus !== exStatus || (incStatusDetail && incStatusDetail !== exStatusDetail))
+          );
+          const statusChangeDiff = isStatusChanged
+            ? `สถานะ: ${exStatusDetail || exStatus || "-"} ➔ ${incStatusDetail || incStatus}`
+            : "";
 
-      const newCount = parsed.filter((p) => p.actionType === "new").length;
-      const updateCount = parsed.filter((p) => p.actionType === "update").length;
+          let note = r.validationNote || (!effectiveKey ? "ไม่มีเลข Job No" : undefined);
+          let vStatus: "valid" | "warning" = (r.declarationNo || r.etd || r.eta || effectiveKey ? "valid" : "warning");
 
-      // ขั้นที่ 4: สรุปผลลัพธ์
-      setUploadProgress(4);
-      setIsProcessing(false);
-      const safe = computeSafeSelection(parsed);
-      setStagingData(parsed);
-      setSelectedIds(safe);
-      setPreviewFilter(
-        isCustomsFile && parsed.some((r) => r.isCustomsChanged)
-          ? "customs_updates"
-          : safe.size > 0
-          ? "new"
-          : "all"
-      );
+          if (existsInMaster) {
+            if (isDateChanged || isCustomsChanged || isStatusChanged) {
+              vStatus = "valid";
+              note = `🔄 อัปเดต: ${[statusChangeDiff, dateChangeDiff, customsChangeDiff].filter(Boolean).join(" • ")} (อัปเดตทับงานเดิม ไม่เพิ่มแถวใหม่)`;
+            } else {
+              note = "⚪ งานเดิมในระบบแล้ว (ไม่มีข้อมูลใบขน สถานะ หรือกำหนดการเปลี่ยนแปลง)";
+            }
+          } else {
+            if (isPastOrOld) {
+              vStatus = "warning";
+              note = `งานย้อนหลังเดือนเก่า (${opDate.slice(0, 7)}) — ปลดเลือกอัตโนมัติเพื่อป้องกันยอดเดือนเก่าบวม`;
+            } else if (isBlankDummy) {
+              vStatus = "warning";
+              note = `งานว่างเปล่า (ไม่มีตู้/สินค้า/BL) — ปลดเลือกอัตโนมัติ`;
+            } else {
+              note = `งานใหม่ประจำงวด (${opDate.slice(0, 7) || "2026-11"})`;
+            }
+          }
+
+          return {
+            id: r.id || `row-${idx}-${effectiveKey}`,
+            jobNo: effectiveKey,
+            joinNo: r.joinNo || undefined,
+            actionType: (existsInMaster ? "update" : "new") as "update" | "new",
+            fileType: (rowIsCustoms ? "customs" : "fwd") as "customs" | "fwd",
+            customer: r.customer && r.customer !== "—" ? r.customer : (existsInMaster ? existingJobMap.get(effectiveKey)?.customer || "—" : "ลูกค้าใหม่"),
+            declarationNo:
+              r.declarationNo && !["NORMAL", "GENERAL", "IMPORT", "EXPORT", "RE-EXPORT", "TRANSIT"].includes(r.declarationNo.trim().toUpperCase())
+                ? r.declarationNo
+                : undefined,
+            invoiceNo: r.invoiceNo || undefined,
+            status: r.status || (r.customsStatus === "0409" ? "Completed" : "In Progress"),
+            statusDetail: r.statusDetail || undefined,
+            statusRaw: r.statusRaw || undefined,
+            hasExplicitStatus: Boolean(r.hasExplicitStatus),
+            clearDate: r.clearDate || null,
+            customsStatus: r.customsStatus || null,
+            etd: r.etd || (rowIsCustoms ? null : r.submitDate) || null,
+            eta: r.eta || null,
+            submitDate: r.submitDate || null,
+            containerType: r.containerType || undefined,
+            grossWeight: r.grossWeight ?? null,
+            cbm: r.cbm ?? null,
+            csName: r.csName || undefined,
+            bl: r.bl || undefined,
+            commodity: r.commodity || undefined,
+            carrier: r.carrier || undefined,
+            vessel: r.vessel || r.feeder || undefined,
+            feeder: r.feeder || r.vessel || undefined,
+            flightNo: r.flightNo || undefined,
+            flightTime: r.flightTime || undefined,
+            linerBooking: r.linerBooking || undefined,
+            pol: r.pol || undefined,
+            pod: r.pod || undefined,
+            terminal: r.terminal || undefined,
+            shed: r.shed || undefined,
+            depoPort: r.depoPort || undefined,
+            placeOfDelivery: r.placeOfDelivery || undefined,
+            loadingDate: r.loadingDate || undefined,
+            isPastOrOld,
+            isBlankDummy,
+            isGenuineNew,
+            isDateChanged,
+            isCustomsChanged,
+            isStatusChanged,
+            oldStatus: exStatusDetail || exStatus || null,
+            statusChangeDiff,
+            customsChangeDiff,
+            oldEtd: exEtd || null,
+            oldEta: exEta || null,
+            oldFlightTime: exTime || null,
+            dateChangeDiff,
+            validationStatus: vStatus,
+            validationNote: note,
+          };
+        });
+
+        setStagingData(parsedJobs);
+        const safe = computeSafeSelection(parsedJobs);
+        setSelectedIds(safe);
+
+        const countNewJ = parsedJobs.filter((r) => r.isGenuineNew && r.actionType === "new").length;
+        const countCustomsJ = parsedJobs.filter((r) => r.actionType === "update" && r.isCustomsChanged).length;
+        const countDateJ = parsedJobs.filter((r) => r.actionType === "update" && (r.isDateChanged || r.isStatusChanged)).length;
+
+        if (countNewJ > 0) setPreviewFilter("new");
+        else if (countCustomsJ > 0) setPreviewFilter("customs_updates");
+        else if (countDateJ > 0) setPreviewFilter("date_updates");
+        else setPreviewFilter("all");
+        setCurrentPage(1);
+      }
+
+      // สรุปข้อมูลที่อ่านได้
+      const totalNewCount =
+        parsedJobs.filter((p) => p.actionType === "new").length +
+        parsedTransports.filter((t) => t.isNew || t.actionType === "new").length;
+      const totalUpdateCount =
+        parsedJobs.filter((p) => p.actionType === "update").length +
+        parsedTransports.filter((t) => !t.isNew).length;
+
       setUploadSummary({
-        fileName: file.name,
-        fileType: data.fileTypeLabel || (data.fileType === "customs" ? "รายงานใบขนสินค้า e-Customs" : "รายงาน FWD Booking Report"),
-        rows: parsed.length,
-        newJobs: newCount,
-        updatedJobs: updateCount,
+        fileName: files.length === 1 ? files[0].name : `นำเข้าพร้อมกัน ${files.length} ไฟล์`,
+        fileType:
+          files.length === 1
+            ? data.fileTypeLabel ||
+              (parsedTransports.length > 0
+                ? "รายงานการจองรถขนส่ง"
+                : "รายงานการขนส่ง FWD")
+            : `ชุดรายงานแบบผสม (${files.length} ไฟล์)`,
+        rows: (parsedJobs.length || 0) + (parsedTransports.length || 0),
+        newJobs: totalNewCount,
+        updatedJobs: totalUpdateCount,
       });
 
-      if (parsed.length > 0) {
-        showToast(`อ่านไฟล์ ${file.name} สำเร็จ (${parsed.length} รายการ) · แสดงผลตาราง Preview เพื่อตรวจสอบ`);
+      const totalActionable =
+        (parsedJobs.filter((r) => isSelectable(r)).length || 0) +
+        (parsedTransports.filter(
+          (t) => t.isNew || t.isDateChanged || t.isDriverChanged || t.isPlateChanged
+        ).length || 0);
+
+      if (totalActionable > 0 || (parsedJobs.length + parsedTransports.length > 0)) {
+        showToast(
+          `อ่านไฟล์สำเร็จ ${files.length} ไฟล์ (${totalActionable} รายการที่พร้อมอัปเดต) · ตรวจสอบและกดซิงค์ทั้งหมดได้ทันที`
+        );
       } else {
-        showToast(`ไฟล์ ${file.name} ไม่มีข้อมูลงานที่จับคู่ได้`);
+        showToast(`ไม่พบข้อมูลที่ตรงกับเงื่อนไขในไฟล์ที่อัปโหลด`);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("Upload error:", err);
       setIsProcessing(false);
       setUploadProgress(-1);
-      // Fallback: If it's a CSV, try client-side parse
-      if (file.name.toLowerCase().endsWith(".csv")) {
+      // Fallback: If it's a single CSV, try client-side parse
+      if (files.length === 1 && files[0].name.toLowerCase().endsWith(".csv")) {
         const reader = new FileReader();
         reader.onload = (e) => {
           const content = e.target?.result as string;
-          if (content) parseCSVText(content, file.name);
+          if (content) parseCSVText(content, files[0].name);
         };
-        reader.readAsText(file);
+        reader.readAsText(files[0]);
       } else {
-        showToast(`เกิดข้อผิดพลาดในการอ่านไฟล์ Excel: ${msg}`);
+        showToast(`เกิดข้อผิดพลาดในการอ่านไฟล์: ${msg}`);
       }
     }
   };
 
+  const handleNativeFileUpload = (file: File) => handleNativeFilesUpload([file]);
+
   /* ==========================================================================
-   * 4. CONFIRM & APPLY TO MASTER (กดยืนยันนำเข้าเฉพาะงานใหม่จริงประจำงวด)
-   * Existing jobs update in place; old unmatched jobs remain blocked to prevent duplicate imports.
+   * 4. HELPER: คำนวณ DELTA JOBS ที่เปลี่ยนแปลงจริงเพื่อบันทึกลงระบบ
    * ========================================================================== */
-  const handleConfirmApply = async () => {
-    if (!stagingData || stagingData.length === 0) return;
-
-    // กรองเฉพาะรายการที่เลือก และเข้าเงื่อนไข isSelectable
-    const recordsToApply = stagingData.filter((r) => selectedIds.has(r.id) && isSelectable(r));
-    if (recordsToApply.length === 0) {
-      showToast("⚠️ ไม่มีรายการที่จะบันทึก (งานเดิมที่ไม่เปลี่ยนวันเวลาถูกข้ามเพื่อไม่ให้งานบวม)");
-      return;
-    }
-
-    const updatedJobsList = [...jobs];
-    // เก็บเฉพาะงานที่เพิ่มใหม่หรือแก้ไขจริง (deltaJobs) เพื่อส่งให้ /api/uploads แทนการส่งทั้ง 3,600+ งาน (~4 MB)
+  const computeChangedJobs = (recordsToApply: StagingRecord[], currentJobs: JobRecord[]) => {
+    const updatedJobsList = [...currentJobs];
     const changedJobs: JobRecord[] = [];
     let applyNew = 0;
     let dateUpdatedCount = 0;
-    let skippedDuplicates = 0;
-    let blockedOld = 0;
 
-    // Index existing jobs strictly by exact Job No & Join No (no SH prefix stripping!)
     const jobIndexMap = new Map<string, number>();
     updatedJobsList.forEach((j, idx) => {
-      if (j.jobNo) {
-        const jn = j.jobNo.trim().toUpperCase();
-        jobIndexMap.set(jn, idx);
-      }
+      if (j.jobNo) jobIndexMap.set(j.jobNo.trim().toUpperCase(), idx);
       if (j.joinNo) {
         const jjn = j.joinNo.trim().toUpperCase().replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
-        if (jjn && !jobIndexMap.has(jjn)) {
-          jobIndexMap.set(jjn, idx);
-        }
+        if (jjn && !jobIndexMap.has(jjn)) jobIndexMap.set(jjn, idx);
       }
     });
 
     for (const stg of recordsToApply) {
       const stgKey = stg.jobNo.trim().toUpperCase();
       const stgJoin = (stg.joinNo || "").trim().toUpperCase().replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
-
       const existingIdx = jobIndexMap.get(stgKey) ?? (stgJoin ? jobIndexMap.get(stgJoin) : undefined);
 
-      // 1. Existing Job Match
       if (existingIdx !== undefined) {
         if (stg.isDateChanged || stg.isCustomsChanged || stg.isStatusChanged) {
-          // UPDATE IN PLACE (Anti-Bloat: in-place update on existing job, no new rows added!)
           const target = { ...updatedJobsList[existingIdx] };
           if (stg.etd) target.etd = stg.etd;
           if (stg.eta) target.eta = stg.eta;
@@ -895,7 +942,6 @@ export function StagingUploadView({
               target.nextAction = "นำส่งสินค้าเรียบร้อย";
             }
           }
-          // Update declaration numbers independently of status; only advance status, never downgrade.
           if (stg.fileType === "customs") {
             if (stg.declarationNo) {
               target.declarationNo = stg.declarationNo;
@@ -913,7 +959,6 @@ export function StagingUploadView({
               target.doReleased = true;
             }
           }
-
           if (stg.isDateChanged) {
             const isExp = target.jobNo?.startsWith("SE") || target.jobNo?.startsWith("SHSE") || target.jobNo?.startsWith("AE") || target.jobNo?.startsWith("SHAE");
             const finalOpDate = isExp ? (target.etd || target.submitDate || target.eta) : (target.eta || target.submitDate || target.etd);
@@ -922,22 +967,13 @@ export function StagingUploadView({
               target.month = finalOpDate.slice(0, 7);
             }
           }
-          if (stg.customsStatus === "0409") {
-            target.status = "Completed";
-            target.statusDetail = "Job Complete";
-            target.nextAction = "นำส่งสินค้าเรียบร้อย";
-          }
           updatedJobsList[existingIdx] = target;
           changedJobs.push(target);
           dateUpdatedCount++;
-        } else {
-          skippedDuplicates++;
         }
         continue;
       }
 
-      // 2. ล็อคงานงวดเก่าก่อน พ.ย. 2026 ไม่ให้เพิ่มแถวใหม่ซ้ำซ้อน (ใช้กฎ Export = ETD, Import = ETA)
-      //    เช่น งานนำเข้าที่ ETD ต.ค. แต่ ETA พ.ย. ต้องใช้วัน ETA (พ.ย.) จึงจะไม่โดนล็อคผิดพลาด
       const isExp =
         stg.jobNo.startsWith("SE") ||
         stg.jobNo.startsWith("SHSE") ||
@@ -946,17 +982,9 @@ export function StagingUploadView({
       const opDate = isExp
         ? (stg.etd || stg.submitDate || stg.eta || "")
         : (stg.eta || stg.submitDate || stg.etd || "");
-      if (opDate && opDate < "2026-11-01") {
-        blockedOld++;
-        continue;
-      }
+      if (opDate && opDate < "2026-11-01") continue;
+      if (stg.isBlankDummy) continue;
 
-      // 3. Skip blank dummy rows
-      if (stg.isBlankDummy) {
-        continue;
-      }
-
-      // 4. Genuine New Job -> push new row
       applyNew++;
       const svc = (
         stg.jobNo.startsWith("SI") || stg.jobNo.startsWith("SHSI")
@@ -1036,22 +1064,88 @@ export function StagingUploadView({
       };
       updatedJobsList.push(newJobRecord);
       changedJobs.push(newJobRecord);
-
       const newIdx = updatedJobsList.length - 1;
       jobIndexMap.set(stgKey, newIdx);
       if (stgJoin && !jobIndexMap.has(stgJoin)) jobIndexMap.set(stgJoin, newIdx);
     }
 
-    if (applyNew === 0 && dateUpdatedCount === 0) {
-      showToast(
-        `🛡️ ปลอดภัย: ไม่พบงานใหม่หรือข้อมูลที่เปลี่ยนแปลง (ข้ามงานเดิม ${skippedDuplicates} รายการ, บล็อคงานเก่า ${blockedOld} รายการ ไม่ให้งานบวม)`
-      );
+    return { updatedJobsList, changedJobs, applyNew, dateUpdatedCount };
+  };
+
+  /* ==========================================================================
+   * 4.1 MASTER SMART SYNC (บันทึกทั้งงานขนส่งหลักและเที่ยวรถพร้อมกันในคราวเดียว)
+   * ========================================================================== */
+  const handleSmartSyncAll = async () => {
+    const jobRecordsToApply = stagingData ? stagingData.filter((r) => selectedIds.has(r.id) && isSelectable(r)) : [];
+    const tripsToApply = stagingTransport ? stagingTransport.filter((t) => selectedTransportIds.has(t.id)) : [];
+
+    if (jobRecordsToApply.length === 0 && tripsToApply.length === 0) {
+      showToast("⚠️ ไม่มีรายการที่จะบันทึก (กรุณาเลือกอย่างน้อย 1 รายการ)");
+      return;
+    }
+
+    let finalJobsList = [...jobs];
+    let changedJobs: JobRecord[] = [];
+
+    if (jobRecordsToApply.length > 0) {
+      const res = computeChangedJobs(jobRecordsToApply, jobs);
+      finalJobsList = res.updatedJobsList;
+      changedJobs = res.changedJobs;
+    }
+
+    setIsProcessing(true);
+    try {
+      const resp = await fetch("/api/uploads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "smart_sync",
+          deltaJobs: changedJobs,
+          trips: tripsToApply,
+        }),
+      });
+      const res = await resp.json();
+      if (!resp.ok || !res.ok) {
+        throw new Error(res.error || "ไม่สามารถบันทึกข้อมูลได้");
+      }
+
+      const msg = res.message || `⚡ ซิงค์ข้อมูลสำเร็จ! บันทึกงาน ${changedJobs.length} งาน และเที่ยวรถ ${tripsToApply.length} เที่ยวเรียบร้อยแล้ว`;
+      if (changedJobs.length > 0) {
+        onApplyUpload(res.jobs || finalJobsList, msg);
+      }
+      if (tripsToApply.length > 0 && onApplyTransportUpload) {
+        onApplyTransportUpload(res.transport || transport, msg);
+      }
+      showToast(msg);
+      handleClearAll();
+    } catch (err: unknown) {
+      const m = err instanceof Error ? err.message : String(err);
+      showToast(`เกิดข้อผิดพลาดในการซิงค์ข้อมูล: ${m}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  /* ==========================================================================
+   * 4.2 CONFIRM & APPLY TO MASTER (กดยืนยันเฉพาะงานในตาราง Jobs)
+   * ========================================================================== */
+  const handleConfirmApply = async () => {
+    if (!stagingData || stagingData.length === 0) return;
+
+    const recordsToApply = stagingData.filter((r) => selectedIds.has(r.id) && isSelectable(r));
+    if (recordsToApply.length === 0) {
+      showToast("⚠️ ไม่มีรายการที่จะบันทึก (งานเดิมที่ไม่เปลี่ยนวันเวลาถูกข้ามเพื่อไม่ให้งานบวม)");
+      return;
+    }
+
+    const { updatedJobsList, changedJobs, applyNew, dateUpdatedCount } = computeChangedJobs(recordsToApply, jobs);
+
+    if (changedJobs.length === 0) {
+      showToast("🛡️ ปลอดภัย: ไม่พบงานใหม่หรือข้อมูลที่เปลี่ยนแปลง");
       return;
     }
 
     try {
-      // ส่งเฉพาะ deltaJobs (รายการที่เปลี่ยน/เพิ่มใหม่จริง) ไปให้ Backend upsert ลง PostgreSQL
-      // เพื่อให้เร็ว (<300ms) และไม่ชนขีดจำกัด Request Body 4.5 MB ของ Vercel Serverless
       const response = await fetch("/api/uploads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1070,25 +1164,22 @@ export function StagingUploadView({
     const summaryParts: string[] = [];
     if (applyNew > 0) summaryParts.push(`✨ เพิ่มงานใหม่ ${applyNew} งาน`);
     if (dateUpdatedCount > 0) summaryParts.push(`🔄 อัปเดตกำหนดการ/ข้อมูลใบขน ${dateUpdatedCount} งาน (ไม่บวม)`);
-    if (skippedDuplicates > 0) summaryParts.push(`⚪ ข้ามงานเดิม ${skippedDuplicates} งาน`);
-    if (blockedOld > 0) summaryParts.push(`🛡️ ล็อคงานเก่า ${blockedOld} งาน`);
 
     const summaryText = summaryParts.join(" • ") || `บันทึกเรียบร้อย (${updatedJobsList.length} งาน)`;
     onApplyUpload(updatedJobsList, summaryText);
     showToast(summaryText);
     setStagingData(null);
-    setUploadFile(null);
-    setUploadProgress(-1);
-    setUploadSummary(null);
+    if (!stagingTransport) {
+      handleClearAll();
+    }
   };
 
   /* ==========================================================================
-   * 4.1 CONFIRM & APPLY TRANSPORT (กดยืนยันนำเข้าเที่ยวรถเข้าสู่ระบบ)
+   * 4.3 CONFIRM & APPLY TRANSPORT (กดยืนยันเฉพาะตารางเที่ยวรถ)
    * ========================================================================== */
   const handleConfirmApplyTransport = async () => {
     if (!stagingTransport || stagingTransport.length === 0) return;
 
-    // กรองเฉพาะเที่ยวรถที่ผู้ใช้ติ๊กเลือก
     const tripsToApply = stagingTransport.filter((t) => selectedTransportIds.has(t.id));
     if (tripsToApply.length === 0) {
       showToast("กรุณาเลือกเที่ยวรถที่ต้องการนำเข้าอย่างน้อย 1 รายการ");
@@ -1120,9 +1211,9 @@ export function StagingUploadView({
       }
 
       setStagingTransport(null);
-      setUploadFile(null);
-      setUploadProgress(-1);
-      setUploadSummary(null);
+      if (!stagingData) {
+        handleClearAll();
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       showToast(`เกิดข้อผิดพลาดในการบันทึกเที่ยวรถ: ${msg}`);
@@ -1326,12 +1417,41 @@ export function StagingUploadView({
     [stagingTransport]
   );
   const countDateUpdatesTransport = useMemo(
-    () => stagingTransport?.filter((t) => (!t.isNew || t.actionType === "update") && t.isDateChanged).length || 0,
+    () =>
+      stagingTransport?.filter(
+        (t) =>
+          (!t.isNew || t.actionType === "update") &&
+          (t.isDateChanged || t.isDriverChanged || t.isPlateChanged)
+      ).length || 0,
     [stagingTransport]
   );
   const countUnchangedTransport = useMemo(
-    () => stagingTransport?.filter((t) => (!t.isNew || t.actionType === "update") && !t.isDateChanged).length || 0,
+    () =>
+      stagingTransport?.filter(
+        (t) =>
+          (!t.isNew || t.actionType === "update") &&
+          !t.isDateChanged &&
+          !t.isDriverChanged &&
+          !t.isPlateChanged
+      ).length || 0,
     [stagingTransport]
+  );
+  const selNewTransportCount = useMemo(
+    () =>
+      stagingTransport?.filter(
+        (t) => selectedTransportIds.has(t.id) && (t.isNew || t.actionType === "new")
+      ).length || 0,
+    [stagingTransport, selectedTransportIds]
+  );
+  const selUpdateTransportCount = useMemo(
+    () =>
+      stagingTransport?.filter(
+        (t) =>
+          selectedTransportIds.has(t.id) &&
+          (!t.isNew || t.actionType === "update") &&
+          (t.isDateChanged || t.isDriverChanged || t.isPlateChanged)
+      ).length || 0,
+    [stagingTransport, selectedTransportIds]
   );
   const countExistingTransport = useMemo(
     () => stagingTransport?.filter((t) => !t.isNew && t.actionType === "update").length || 0,
@@ -1344,9 +1464,16 @@ export function StagingUploadView({
     if (transportFilter === "new") {
       list = list.filter((t) => t.isNew || t.actionType === "new");
     } else if (transportFilter === "date_updates") {
-      list = list.filter((t) => t.isDateChanged);
+      list = list.filter((t) => t.isDateChanged || t.isDriverChanged || t.isPlateChanged);
     } else if (transportFilter === "existing") {
-      list = list.filter((t) => !t.isNew && t.actionType === "update");
+      list = list.filter(
+        (t) =>
+          !t.isNew &&
+          t.actionType === "update" &&
+          !t.isDateChanged &&
+          !t.isDriverChanged &&
+          !t.isPlateChanged
+      );
     }
     if (transportQ.trim()) {
       const q = transportQ.toLowerCase();
@@ -1358,6 +1485,7 @@ export function StagingUploadView({
           t.customer,
           t.plateNo,
           t.driverName,
+          t.driver,
           t.transporter,
           t.container,
           t.pickupLocation,
@@ -1397,6 +1525,31 @@ export function StagingUploadView({
               </p>
             </div>
 
+            {/* Auto-Apply Toggle */}
+            <div className="mt-3 flex items-center justify-between p-3 bg-amber-50/70 rounded-[10px] border border-amber-200/90 text-xs">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                <div>
+                  <span className="font-bold text-[#102238]">โหมดซิงค์อัตโนมัติ (Auto-Apply on Drop)</span>
+                  <p className="text-[11.5px] text-[#526275]">บันทึกและซิงค์ลงฐานข้อมูลทันทีเมื่อลากไฟล์วาง (ไม่ต้องรอกดยืนยันทีละขั้นตอน)</p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={autoApplyOnDrop}
+                  onChange={(e) => {
+                    setAutoApplyOnDrop(e.target.checked);
+                    try {
+                      localStorage.setItem("perkin_auto_apply_upload", e.target.checked ? "true" : "false");
+                    } catch {}
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
+            </div>
+
             {/* Drag and Drop Zone */}
             <label
               onDragOver={(e) => {
@@ -1410,11 +1563,11 @@ export function StagingUploadView({
               onDrop={(e) => {
                 e.preventDefault();
                 setIsDragOver(false);
-                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                  handleNativeFileUpload(e.dataTransfer.files[0]);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  handleNativeFilesUpload(Array.from(e.dataTransfer.files));
                 }
               }}
-              className={`mt-4 border-2 border-dashed rounded-[10px] p-6 text-center transition-[transform,background-color,border-color,box-shadow] duration-200 ease-out cursor-pointer flex flex-col items-center justify-center block ${
+              className={`mt-3 border-2 border-dashed rounded-[10px] p-6 text-center transition-[transform,background-color,border-color,box-shadow] duration-200 ease-out cursor-pointer flex flex-col items-center justify-center block ${
                 isDragOver
                   ? "border-[#f56a22] bg-[#fff6f0] scale-[1.01] shadow-md ring-4 ring-[#f56a22]/15"
                   : "border-[#c5cfd9] hover:border-[#f56a22] bg-[#f5f6f8]/70 hover:bg-[#fff9f5]"
@@ -1422,12 +1575,13 @@ export function StagingUploadView({
             >
               <input
                 type="file"
+                multiple
                 accept=".xlsx,.xls,.csv"
-                aria-label="เลือกไฟล์รายงาน FWD หรือใบขนสินค้าเพื่ออัปโหลด"
+                aria-label="เลือกไฟล์รายงาน FWD, ใบขนสินค้า หรือขนส่งเพื่ออัปโหลด"
                 className="hidden"
                 onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    handleNativeFileUpload(e.target.files[0]);
+                  if (e.target.files && e.target.files.length > 0) {
+                    handleNativeFilesUpload(Array.from(e.target.files));
                   }
                 }}
               />
@@ -1439,46 +1593,50 @@ export function StagingUploadView({
                 <UploadCloud className="w-6 h-6" />
               </div>
               <h3 className="mt-3 text-[15px] font-bold text-[#102238]">
-                ลากไฟล์รายงานมาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์
+                ลากไฟล์รายงานมาวางที่นี่ (รองรับหลายไฟล์พร้อมกัน)
               </h3>
-              <p className="text-[12.5px] text-[#526275] mt-1 max-w-[420px]">
-                รองรับไฟล์ Booking List FWD, รายงานใบขนสินค้า e-Customs (.xlsx / .xls / .csv)
+              <p className="text-[12.5px] text-[#526275] mt-1 max-w-[460px]">
+                สามารถโยนรายงาน Shipping, Transport, Oversea, และ Air Freight มาพร้อมกันได้เลย ระบบจะแยกหมวดหมู่อัตโนมัติ (.xlsx / .xls / .csv)
               </p>
               <div className="mt-3 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-[6px] bg-[#f56a22] hover:bg-[#e05612] text-white font-medium text-xs shadow-2xs transition-colors">
                 <UploadCloud className="w-3.5 h-3.5" />
-                <span>เลือกไฟล์จากเครื่อง</span>
+                <span>เลือกไฟล์จากเครื่อง (เลือกได้หลายไฟล์)</span>
               </div>
             </label>
 
-            {/* สถานะไฟล์ที่อัปโหลด */}
-            {uploadFile && (
-              <div className="mt-4 p-3.5 rounded-[8px] bg-slate-50 border border-[#dce2e8] overflow-hidden">
+            {/* แสดงรายการไฟล์ที่อัปโหลด */}
+            {uploadedFilesList.length > 0 && (
+              <div className="mt-4 p-3.5 rounded-[8px] bg-slate-50 border border-[#dce2e8] space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FileSpreadsheet className="w-5 h-5 text-[#0d7a5f] shrink-0" />
-                    <div className="min-w-0">
-                      <div className="font-semibold text-[13px] text-[#102238] truncate">
-                        {uploadFile.name}
-                      </div>
-                      <div className="text-[11.5px] font-mono text-[#526275]">
-                        {(uploadFile.size / 1024).toFixed(1)} KB · กำลังประมวลผลใน Staging Ingestion
-                      </div>
-                    </div>
+                  <div className="text-xs font-semibold text-[#102238] flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>ไฟล์ที่นำเข้า ({uploadedFilesList.length} ไฟล์):</span>
                   </div>
-                  <span className="font-mono text-xs px-2.5 py-0.5 rounded bg-[#e6f5f0] text-[#0d7a5f] font-semibold shrink-0">
+                  <span className="font-mono text-xs px-2.5 py-0.5 rounded bg-[#e6f5f0] text-[#0d7a5f] font-semibold">
                     {uploadProgress === 4 ? "วิเคราะห์สำเร็จ" : "กำลังตรวจสอบ..."}
                   </span>
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {uploadedFilesList.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 p-2 rounded bg-white border border-slate-200 text-xs">
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-[#0d7a5f] shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-[#102238] truncate" title={f.name}>{f.name}</div>
+                        <div className="text-[11px] text-slate-400 font-mono">{(f.size / 1024).toFixed(1)} KB</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
                 {/* Shimmer Progress Bar ขณะประมวลผล */}
                 {isProcessing && (
-                  <div className="mt-3 w-full h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div className="mt-2 w-full h-1.5 rounded-full bg-slate-200 overflow-hidden">
                     <div className="h-full rounded-full animate-shimmer" />
                   </div>
                 )}
               </div>
             )}
 
-            {/* สรุปผลลัพธ์การอัปเดต (Upload Summary) */}
+            {/* สรุปผลลัพธ์การอัปเดตและปุ่ม Master Smart Sync */}
             {uploadSummary && (
               <div className="mt-4 p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 flex flex-wrap sm:flex-nowrap items-start justify-between gap-3">
                 <div className="flex items-start gap-3">
@@ -1487,146 +1645,105 @@ export function StagingUploadView({
                     <div className="font-bold text-[13.5px] text-emerald-900 flex items-center gap-1.5">
                       <span>
                         ตรวจสอบโครงสร้างไฟล์เรียบร้อย ·{" "}
-                        {stagingTransport
+                        {stagingTransport && stagingData
+                          ? "ชุดข้อมูลแบบผสม (ขนส่งในประเทศ + ชิปเมนท์หลัก)"
+                          : stagingTransport
                           ? "โหมดตรวจสอบเที่ยวรถขนส่ง (Inland Transport)"
                           : "นโยบายรักษาความถูกต้องเปิดทำงาน"}
                       </span>
                     </div>
-                                        {stagingTransport ? (
-                      <div className="text-xs text-slate-700 font-mono mt-1 space-y-1">
-                        <div>
-                          • จำนวนเที่ยวรถในไฟล์ทั้งหมด: <b>{uploadSummary.rows}</b> เที่ยว
-                        </div>
-                        <div>
-                          • เที่ยวรถเดิมไม่เปลี่ยน:{" "}
-                          <span className="text-slate-600 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                            ⚪ {countUnchangedTransport} เที่ยว (ข้ามเพื่อไม่ให้ซ้ำ)
-                          </span>
-                        </div>
-                        {countDateUpdatesTransport > 0 && (
-                          <div>
-                            • อัปเดตวันส่งมอบ:{" "}
-                            <span className="text-sky-800 font-bold bg-sky-100/80 px-1.5 py-0.5 rounded border border-sky-300">
-                              🔄 {countDateUpdatesTransport} เที่ยว
+
+                    <div className="text-xs text-slate-700 font-mono mt-1 space-y-1.5">
+                      {stagingTransport && (
+                        <div className="p-2 rounded bg-white/70 border border-slate-200/60 space-y-1">
+                          <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                            <Truck className="w-3.5 h-3.5 text-sky-600" />
+                            <span>ข้อมูลเที่ยวรถในประเทศ (Inland Transport): {stagingTransport.length} เที่ยว</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-[11.5px]">
+                            {countNewTransport > 0 && (
+                              <span className="text-emerald-800 font-bold bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300">
+                                ✨ {countNewTransport} เที่ยวใหม่
+                              </span>
+                            )}
+                            {countDateUpdatesTransport > 0 && (
+                              <span className="text-sky-800 font-bold bg-sky-100/80 px-1.5 py-0.5 rounded border border-sky-300">
+                                🔄 {countDateUpdatesTransport} เที่ยวอัปเดต (คนขับ/ทะเบียน/วันส่ง)
+                              </span>
+                            )}
+                            <span className="text-slate-600 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                              ⚪ {countUnchangedTransport} เที่ยวเดิม (ข้าม)
+                            </span>
+                            <span className="text-slate-700">
+                              (เลือกแล้ว <b>{selectedTransportIds.size}</b> เที่ยว)
                             </span>
                           </div>
-                        )}
-                        {countCustomsUpdates > 0 && (
-                          <div>
-                            • อัปเดตข้อมูลใบขน:{" "}
-                            <span className="text-indigo-800 font-bold bg-indigo-100/80 px-1.5 py-0.5 rounded border border-indigo-300">
-                              🔄 {countCustomsUpdates} งาน (บันทึกทับงานเดิม ไม่สร้างซ้ำ)
+                        </div>
+                      )}
+
+                      {stagingData && (
+                        <div className="p-2 rounded bg-white/70 border border-slate-200/60 space-y-1">
+                          <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>ข้อมูลชิปเมนท์หลัก (Shipping / FWD): {stagingData.length} งาน</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-[11.5px]">
+                            {countGenuineNew > 0 && (
+                              <span className="text-emerald-800 font-bold bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300">
+                                ✨ {countGenuineNew} งานใหม่
+                              </span>
+                            )}
+                            {countDateUpdates > 0 && (
+                              <span className="text-sky-800 font-bold bg-sky-100/80 px-1.5 py-0.5 rounded border border-sky-300">
+                                🔄 {countDateUpdates} งานอัปเดตกำหนดการ
+                              </span>
+                            )}
+                            {countCustomsUpdates > 0 && (
+                              <span className="text-indigo-800 font-bold bg-indigo-100/80 px-1.5 py-0.5 rounded border border-indigo-300">
+                                🔄 {countCustomsUpdates} งานอัปเดตใบขน
+                              </span>
+                            )}
+                            {countLockedOld > 0 && (
+                              <span className="text-amber-800 font-bold bg-amber-100/70 px-1.5 py-0.5 rounded border border-amber-300/80">
+                                🛡️ {countLockedOld} งานเก่าล็อคไว้
+                              </span>
+                            )}
+                            <span className="text-slate-600 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                              ⚪ {countUnchanged} งานเดิม (ข้าม)
+                            </span>
+                            <span className="text-slate-700">
+                              (เลือกแล้ว <b>{selectedIds.size}</b> งาน)
                             </span>
                           </div>
-                        )}
-                        <div>
-                          • เที่ยวรถใหม่ที่จะนำเข้า:{" "}
-                          <span className="text-emerald-800 font-bold bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300">
-                            ✨ {countNewTransport} เที่ยว
-                          </span>
-                          <span className="ml-1.5 text-slate-600 font-normal">
-                            (เลือกแล้ว <b>{selectedTransportIds.size}</b> เที่ยว)
-                          </span>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="text-xs text-slate-700 font-mono mt-1 space-y-1">
-                        <div>
-                          • จำนวนข้อมูลในไฟล์: <b>{uploadSummary.rows}</b> รายการ
-                        </div>
-                        <div>
-                          • งานเดิมไม่เปลี่ยนวันเวลา:{" "}
-                          <span className="text-slate-600 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                            ⚪ {countUnchanged} งาน (ข้ามเพื่อไม่ให้งานบวม)
-                          </span>
-                        </div>
-                        {countDateUpdates > 0 && (
-                          <div>
-                            • อัปเดตกำหนดการ ETD/ETA:{" "}
-                            <span className="text-sky-800 font-bold bg-sky-100/80 px-1.5 py-0.5 rounded border border-sky-300">
-                              🔄 {countDateUpdates} งาน (อัปเดตทับงานเดิม ไม่บวม)
-                            </span>
-                          </div>
-                        )}
-                        {countLockedOld > 0 && (
-                          <div>
-                            • งานเก่า/ก่อนกำหนด:{" "}
-                            <span className="text-amber-800 font-bold bg-amber-100/70 px-1.5 py-0.5 rounded border border-amber-300/80">
-                              🛡️ {countLockedOld} งาน (ล็อคข้อมูลไว้ ป้องกันงานบวม)
-                            </span>
-                          </div>
-                        )}
-                        <div>
-                          • งานใหม่ที่จะนำเข้า:{" "}
-                          <span className="text-emerald-800 font-bold bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300">
-                            ✨ {countGenuineNew} งาน
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  {stagingTransport ? (
-                    <button
-                      type="button"
-                      aria-label="ยืนยันนำเข้าเที่ยวรถเข้าสู่ระบบ"
-                      onClick={handleConfirmApplyTransport}
-                      disabled={selectedTransportIds.size === 0}
-                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-[background-color,color] focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none cursor-pointer ${
-                        selectedTransportIds.size > 0
-                          ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                          : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                      }`}
-                      title={
-                        selectedTransportIds.size === 0
-                          ? "กรุณาเลือกเที่ยวรถที่ต้องการนำเข้าอย่างน้อย 1 รายการ"
-                          : `ยืนยันนำเข้าเที่ยวรถ ${selectedTransportIds.size} รายการ`
-                      }
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>
-                        {selectedTransportIds.size === 0
-                          ? "ยังไม่ได้เลือกเที่ยวรถ"
-                          : `ยืนยันนำเข้าเที่ยวรถ (${selectedTransportIds.size})`}
-                      </span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      aria-label="ยืนยันนำเข้าเฉพาะงานใหม่"
-                      onClick={handleConfirmApply}
-                      disabled={countActionable === 0 || selectedIds.size === 0}
-                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-[background-color,color] focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none cursor-pointer ${
-                        countActionable > 0 && selectedIds.size > 0
-                          ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                          : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                      }`}
-                      title={
-                        countActionable === 0
-                          ? "ไม่มีงานใหม่หรือข้อมูลใบขนที่เปลี่ยนแปลง"
-                          : `ยืนยันบันทึกข้อมูลที่เลือก ${selectedIds.size} รายการ`
-                      }
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>
-                        {countActionable === 0
-                          ? "ไม่มีรายการอัปเดต"
-                          : `ยืนยันบันทึกข้อมูล (${selectedIds.size})`}
-                      </span>
-                    </button>
-                  )}
                   <button
                     type="button"
-                    aria-label="ล้างข้อมูลทดสอบโดยไม่บันทึก"
-                    onClick={() => {
-                      setStagingData(null);
-                      setStagingTransport(null);
-                      setUploadFile(null);
-                      setUploadProgress(-1);
-                      setUploadSummary(null);
-                    }}
+                    aria-label="บันทึกและซิงค์ทั้งหมดทันที"
+                    onClick={handleSmartSyncAll}
+                    disabled={isProcessing || (selectedIds.size === 0 && selectedTransportIds.size === 0)}
+                    className={`px-4 py-2.5 rounded-lg text-xs font-bold shadow-xs flex items-center gap-2 transition-[background-color,color,box-shadow] cursor-pointer ${
+                      selectedIds.size > 0 || selectedTransportIds.size > 0
+                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-emerald-700/20"
+                        : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                    }`}
+                    title={`บันทึกและซิงค์ข้อมูลที่เลือกทั้งหมด (${selectedIds.size + selectedTransportIds.size} รายการ) ลงระบบทันที`}
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>
+                      ⚡ บันทึกและซิงค์ทั้งหมด ({selectedIds.size + selectedTransportIds.size})
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-label="ล้างข้อมูลทั้งหมด"
+                    onClick={handleClearAll}
                     className="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-xs text-slate-600 font-medium transition-[background-color,color] focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:outline-none cursor-pointer"
                     title="ล้างข้อมูลทดสอบโดยไม่บันทึก"
                   >
@@ -2561,7 +2678,7 @@ export function StagingUploadView({
                 </button>
                 <button
                   type="button"
-                  aria-label="แสดงเฉพาะเที่ยวรถที่อัปเดตวันส่งมอบ"
+                  aria-label="แสดงเฉพาะเที่ยวรถที่อัปเดตข้อมูล"
                   onClick={() => {
                     setTransportFilter("date_updates");
                     setTransportPage(1);
@@ -2572,7 +2689,7 @@ export function StagingUploadView({
                       : "text-sky-700 hover:text-sky-900"
                   }`}
                 >
-                  🔄 อัปเดตส่งมอบ ({countDateUpdatesTransport})
+                  🔄 อัปเดตข้อมูล ({countDateUpdatesTransport})
                 </button>
                 <button
                   type="button"
@@ -2642,12 +2759,12 @@ export function StagingUploadView({
               <span className="text-slate-300">|</span>
               <button
                 type="button"
-                aria-label="เลือกเฉพาะเที่ยวรถใหม่"
+                aria-label="เลือกเฉพาะเที่ยวรถใหม่และอัปเดต"
                 onClick={handleSelectSafeTransportOnly}
                 className="px-2.5 py-1 rounded-md bg-emerald-100/80 hover:bg-emerald-200/80 text-emerald-800 font-semibold border border-emerald-300/80 transition-[background-color] cursor-pointer inline-flex items-center gap-1"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>เลือกเฉพาะเที่ยวใหม่ ({countNewTransport})</span>
+                <span>เลือกเฉพาะเที่ยวใหม่ & อัปเดต ({countNewTransport + countDateUpdatesTransport})</span>
               </button>
               <button
                 type="button"
@@ -2717,13 +2834,13 @@ export function StagingUploadView({
 
                       {/* Action Type Badge */}
                       <td className="p-3">
-                        {t.isDateChanged ? (
+                        {(t.isDateChanged || t.isDriverChanged || t.isPlateChanged) ? (
                           <span
                             className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-50 text-sky-800 border border-sky-300"
-                            title={`อัปเดตวันส่งมอบ: ${t.dateChangeDiff || ""} (อัปเดตทับเที่ยวเดิม ไม่บวม)`}
+                            title={`อัปเดตข้อมูล: ${t.dateChangeDiff || ""} (อัปเดตทับเที่ยวเดิม ไม่บวม)`}
                           >
                             <RotateCw className="w-3 h-3 text-sky-600" />
-                            <span>🔄 อัปเดตวันส่งมอบ</span>
+                            <span>🔄 อัปเดตข้อมูล</span>
                           </span>
                         ) : isNewTrip ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
@@ -2832,11 +2949,16 @@ export function StagingUploadView({
                         {isNewTrip ? (
                           <span className="text-xs font-semibold text-emerald-700 flex items-center justify-end gap-1">
                             <Check className="w-3.5 h-3.5" />
-                            <span>พร้อมนำเข้า</span>
+                            <span>เที่ยวรถใหม่</span>
+                          </span>
+                        ) : (t.isDateChanged || t.isDriverChanged || t.isPlateChanged) ? (
+                          <span className="text-xs font-semibold text-sky-700 flex items-center justify-end gap-1">
+                            <RotateCw className="w-3.5 h-3.5" />
+                            <span>พร้อมอัปเดต</span>
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-500 font-medium">
-                            ⚪ ข้อมูลเดิม (ข้าม)
+                          <span className="text-xs text-slate-400 font-medium">
+                            ⚪ ข้อมูลเดิม
                           </span>
                         )}
                       </td>

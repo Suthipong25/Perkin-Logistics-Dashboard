@@ -101,6 +101,7 @@ export async function fetchJobsFromPostgres(): Promise<JobRecord[] | null> {
         age_days AS "ageDays",
         flags,
         invoice_no AS "invoiceNo",
+        declaration_no AS "declarationNo",
         container_type AS "containerType",
         gross_weight AS "grossWeight",
         cbm,
@@ -133,10 +134,17 @@ export async function fetchTransportFromPostgres(): Promise<TransportRecord[] | 
         job_no AS "jobNo",
         customer,
         driver,
+        COALESCE(driver_name, driver) AS "driverName",
+        transporter,
+        plate_no AS "plateNo",
         truck_type AS "truckType",
         truck_type AS "container",
+        pickup_location AS "pickupLocation",
+        pickup_date AS "pickupDate",
+        delivery_location AS "deliveryLocation",
         deliver_date AS "deliverDate",
         deliver_date AS "deliver",
+        return_depot AS "returnDepot",
         status,
         pod
       FROM public.transport_trips
@@ -238,7 +246,7 @@ const JOB_COLS = [
   "draft_customs", "advance_doc", "do_released", "customs_filed", "cleared",
   "draft_date", "customs_date", "do_date", "clear_date", "advance_date",
   "remark", "source_sheet", "source_row", "running_no", "version",
-  "next_action", "age_days", "flags", "invoice_no", "container_type",
+  "next_action", "age_days", "flags", "invoice_no", "declaration_no", "container_type",
   "gross_weight", "cbm", "commodity", "cs_name", "data_source"
 ];
 
@@ -297,6 +305,7 @@ async function executeJobsUpsertOnPool(poolInstance: Pool, jobs: JobRecord[], ch
           sanitizeNum(j.ageDays),
           JSON.stringify(Array.isArray(j.flags) ? j.flags : []),
           j.invoiceNo || "",
+          j.declarationNo || "",
           j.containerType || "",
           sanitizeNum(j.grossWeight),
           sanitizeNum(j.cbm),
@@ -364,7 +373,8 @@ export async function upsertJobsToPostgres(
 }
 
 const TRANSPORT_COLS = [
-  "trip_no", "job_no", "customer", "driver", "truck_type", "deliver_date", "status", "pod"
+  "trip_no", "job_no", "customer", "driver", "truck_type", "deliver_date", "status", "pod",
+  "driver_name", "transporter", "plate_no", "pickup_location", "pickup_date", "delivery_location", "return_depot"
 ];
 
 async function executeTransportUpsertOnPool(poolInstance: Pool, trips: any[], chunkSize = 100): Promise<number> {
@@ -389,11 +399,18 @@ async function executeTransportUpsertOnPool(poolInstance: Pool, trips: any[], ch
           tripNo,
           t.jobNo || "",
           t.customer || "",
-          t.driver || "",
+          t.driver || t.driverName || "",
           t.truckType || t.container || "",
           t.deliverDate || t.deliver || null,
           t.status || "",
-          t.pod || ""
+          t.pod || "",
+          t.driverName || t.driver || "",
+          t.transporter || "",
+          t.plateNo || "",
+          t.pickupLocation || "",
+          t.pickupDate || null,
+          t.deliveryLocation || "",
+          t.returnDepot || ""
         ];
 
         for (const v of rowVals) {

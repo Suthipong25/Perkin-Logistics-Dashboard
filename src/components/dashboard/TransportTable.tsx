@@ -266,7 +266,7 @@ export default function TransportTable({
 
                 {/* ผู้ให้บริการ / คนขับ / ทะเบียน */}
                 <td className="py-2.5 px-3 max-w-[220px]">
-                  {r.transporter || r.driverName || r.plateNo ? (
+                  {r.transporter || r.driverName || r.driver || r.plateNo ? (
                     <div className="flex flex-col gap-0.5">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {r.transporter && (
@@ -274,9 +274,9 @@ export default function TransportTable({
                             {r.transporter}
                           </span>
                         )}
-                        {r.driverName && (
+                        {(r.driverName || r.driver) && (
                           <span className="text-xs font-medium text-slate-800 truncate">
-                            {r.driverName}
+                            {r.driverName || r.driver}
                           </span>
                         )}
                       </div>

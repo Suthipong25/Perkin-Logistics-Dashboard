@@ -48,6 +48,10 @@ backups/*.json
 *.xls
 data/*.xlsx
 data/*.xls
+
+# Scratch scripts
+scratch/
+
 public/exports/*.xlsx
 !public/samples/*.xlsx
 

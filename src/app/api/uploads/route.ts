@@ -1,23 +1,18 @@
 /**
  * ============================================================================
- * API Route: POST /api/uploads
+ * API Route: POST /api/uploads (Enhanced Multi-File & Smart Sync Engine)
  * ============================================================================
- * รองรับการทำงาน 3 รูปแบบหลัก:
- *   1. JSON { action: "apply", deltaJobs | jobs }
- *      - บันทึกงานใหม่/งานที่อัปเดตลง Supabase PostgreSQL เป็นหลัก (รับ deltaJobs เฉพาะรายการที่เปลี่ยน
- *        เพื่อลดขนาด Payload จาก ~4 MB เหลือไม่กี่ KB ไม่ชน Limit 4.5 MB ของ Vercel)
- *      - หากไม่ได้รันบน Vercel (!IS_VERCEL) จะเขียน mirror ลง data/jobs.json + backup + SQLite ด้วย
- *
- *   2. JSON { action: "apply_transport", trips }
- *      - รวม (merge) เที่ยวรถขนส่งใหม่/ที่แก้ไขเข้ากับรายการเดิม และ upsert ลง Supabase PostgreSQL
- *      - หากรันบน Local จะ mirror ลง data/transport.json และเติม transportNo กลับไปที่ jobs.json
- *
- *   3. multipart/form-data (อัปโหลดไฟล์ Excel / CSV)
- *      - Master Workbook ขนาดใหญ่ (2026 Booking Report.xlsx / JOB_Daily*.xlsx):
- *        ทำงานบน Local เท่านั้น (ใช้ os.tmpdir() + standardize_pipeline.py -> PostgreSQL)
- *      - รายงานประจำวัน/รายแผนก (Shipping, Oversea, Air Freight, Transport, Customs):
- *        อ่านจาก Buffer ใน Memory ด้วย parseUploadedExcelBuffer() (Node.js ล้วน ไม่เขียน /var/task
- *        และไม่เรียก Python -> ใช้งานได้ 100% ทั้งบน Vercel Production และ Local)
+ * รองรับการทำงาน:
+ *   1. JSON { action: "smart_sync", deltaJobs, trips }
+ *      - บันทึกทั้งงานขนส่งหลักและเที่ยวรถพร้อมกันในคราวเดียว (One-Click Sync)
+ *      - ส่งเฉพาะ deltaJobs และ trips ที่เปลี่ยนแปลงจริงไปยัง Supabase PostgreSQL
+ *   2. JSON { action: "apply", deltaJobs | jobs } & { action: "apply_transport", trips }
+ *      - คงไว้เพื่อรองรับระบบเดิม (Backward Compatibility)
+ *   3. multipart/form-data
+ *      - รองรับการอัปโหลด "หลายไฟล์พร้อมกัน" (Multi-File Drop):
+ *        เช่น โยน examination_delivery + receiptreport + reportexport พร้อมกัน
+ *      - รองรับ ?autoApply=true เพื่ออ่านและซิงค์บันทึกทับใน Supabase ทันที ไม่ต้องกดยืนยันหลายรอบ
+ *      - ทำงานใน Memory 100% ไม่สร้าง temp file ใน /var/task ปลอดภัยบน Vercel Serverless
  * ============================================================================
  */
 import { NextRequest, NextResponse } from "next/server";
@@ -40,7 +35,6 @@ import { JobRecord, TransportRecord } from "@/types/dashboard";
 const execFileAsync = promisify(execFile);
 export const dynamic = "force-dynamic";
 
-// ตรวจสภาพแวดล้อม Vercel Serverless (Filesystem ใน /var/task เป็น Read-Only ห้ามเขียนไฟล์และไม่มี Python)
 const IS_VERCEL = Boolean(process.env.VERCEL);
 
 function resolveScript(name: string): string {
@@ -57,17 +51,12 @@ function resolveBackupDir(): string {
   return local;
 }
 
-/**
- * ดึงข้อมูลงานปัจจุบันจาก Supabase PostgreSQL เป็นหลัก (Source of Truth)
- * เพื่อให้การเทียบงานซ้ำ/วันเวลาเปลี่ยนบน Vercel เป็นข้อมูลสดล่าสุดเสมอ ไม่ค้างอยู่ที่ jobs.json ตอน Build
- */
 async function getCurrentJobs(): Promise<JobRecord[]> {
   const pgJobs = await fetchJobsFromPostgres();
   if (pgJobs && pgJobs.length > 0) return pgJobs;
   return getJobs();
 }
 
-/** ดึงข้อมูลเที่ยวรถปัจจุบันจาก Supabase PostgreSQL เป็นหลัก (fallback เป็น transport.json) */
 async function getCurrentTransport(): Promise<TransportRecord[]> {
   const pgTransport = await fetchTransportFromPostgres();
   if (pgTransport && pgTransport.length > 0) return pgTransport;
@@ -81,11 +70,123 @@ export async function POST(req: NextRequest) {
     if (contentType.includes("application/json")) {
       const body = await req.json();
 
+      // Case 1: Smart Sync (บันทึกทั้งงานขนส่งหลักและเที่ยวรถพร้อมกันในคราวเดียว)
+      if (body.action === "smart_sync") {
+        const deltaJobs: JobRecord[] = Array.isArray(body.deltaJobs)
+          ? body.deltaJobs
+          : Array.isArray(body.jobs)
+          ? body.jobs
+          : [];
+        const tripsToUpsert: any[] = Array.isArray(body.trips) ? body.trips : [];
+
+        let jobsUpdated = 0;
+        let transportUpdated = 0;
+
+        if (deltaJobs.length > 0) {
+          const pgRes = await upsertJobsToPostgres(deltaJobs);
+          if (!pgRes.success && IS_VERCEL) {
+            return NextResponse.json(
+              {
+                ok: false,
+                error: `ไม่สามารถบันทึกงานลง PostgreSQL ได้: ${pgRes.error || "Unknown DB error"}`,
+              },
+              { status: 500 }
+            );
+          }
+          jobsUpdated = deltaJobs.length;
+        }
+
+        if (tripsToUpsert.length > 0) {
+          const pgTransRes = await upsertTransportToPostgres(tripsToUpsert);
+          if (!pgTransRes.success && IS_VERCEL) {
+            return NextResponse.json(
+              {
+                ok: false,
+                error: `ไม่สามารถบันทึกเที่ยวรถลง PostgreSQL ได้: ${pgTransRes.error || "Unknown DB error"}`,
+              },
+              { status: 500 }
+            );
+          }
+          transportUpdated = tripsToUpsert.length;
+        }
+
+        // Local Mirror (ทำเฉพาะเครื่อง Local ไม่ทำบน Vercel Read-Only FS)
+        if (!IS_VERCEL) {
+          try {
+            if (deltaJobs.length > 0) {
+              const jobsPath = path.resolve(process.cwd(), "data/jobs.json");
+              const existingLocal = getJobs();
+              const byKey = new Map<string, number>();
+              const mergedLocalJobs = [...existingLocal];
+              mergedLocalJobs.forEach((j, idx) => {
+                if (j.id) byKey.set(`ID:${j.id}`, idx);
+                if (j.jobNo) byKey.set(`NO:${j.jobNo.trim().toUpperCase()}`, idx);
+              });
+              for (const dj of deltaJobs) {
+                const idxById = dj.id ? byKey.get(`ID:${dj.id}`) : undefined;
+                const idxByNo = dj.jobNo
+                  ? byKey.get(`NO:${dj.jobNo.trim().toUpperCase()}`)
+                  : undefined;
+                const targetIdx = idxById ?? idxByNo;
+                if (targetIdx !== undefined) mergedLocalJobs[targetIdx] = dj;
+                else mergedLocalJobs.push(dj);
+              }
+              await fs.writeFile(
+                jobsPath,
+                JSON.stringify(mergedLocalJobs, null, 1),
+                "utf-8"
+              );
+            }
+
+            if (tripsToUpsert.length > 0) {
+              const transportPath = path.resolve(process.cwd(), "data/transport.json");
+              const existingTrans = getTransport();
+              const transMap = new Map<string, any>();
+              existingTrans.forEach((t) => {
+                const k = (t.tripNo || t.transportNo || "").trim().toUpperCase();
+                if (k) transMap.set(k, t);
+              });
+              for (const t of tripsToUpsert) {
+                const k = (t.tripNo || t.transportNo || "").trim().toUpperCase();
+                if (k) {
+                  const ex = transMap.get(k);
+                  if (ex) Object.assign(ex, t);
+                  else transMap.set(k, t);
+                }
+              }
+              await fs.writeFile(
+                transportPath,
+                JSON.stringify(Array.from(transMap.values()), null, 2),
+                "utf-8"
+              );
+            }
+          } catch (mirrorErr) {
+            console.warn("[UPLOAD] Local mirror sync warning:", mirrorErr);
+          }
+        }
+
+        const freshJobs = await getCurrentJobs();
+        const freshTransport = await getCurrentTransport();
+
+        return NextResponse.json({
+          ok: true,
+          saved: true,
+          smartSync: true,
+          jobsUpdated,
+          transportUpdated,
+          totalJobs: freshJobs.length,
+          totalTransport: freshTransport.length,
+          jobs: freshJobs,
+          transport: freshTransport,
+          message: `ซิงค์และบันทึกข้อมูลเรียบร้อย! อัปเดตงาน ${jobsUpdated} รายการ และเที่ยวรถ ${transportUpdated} รายการลง Supabase PostgreSQL แล้ว`,
+        });
+      }
+
+      // Case 2: Apply Jobs (เดี่ยว)
       if (
         body.action === "apply" &&
         (Array.isArray(body.deltaJobs) || Array.isArray(body.jobs))
       ) {
-        // รองรับทั้ง deltaJobs (ส่งมาเฉพาะรายการที่เพิ่ม/เปลี่ยน -> เร็วและเล็ก) และ jobs (เต็มชุดสำหรับ backward compatibility)
         const deltaJobs: JobRecord[] | null = Array.isArray(body.deltaJobs)
           ? body.deltaJobs
           : null;
@@ -94,7 +195,6 @@ export async function POST(req: NextRequest) {
           : null;
         const jobsToUpsert = deltaJobs ?? fullJobs ?? [];
 
-        // 1. บันทึกลง PostgreSQL ก่อนเสมอ (บน Vercel หาก DB ล้มเหลวต้องคืน 500 เพื่อไม่ให้แจ้งผู้ใช้ว่าบันทึกสำเร็จปลอมๆ)
         const pgResult = await upsertJobsToPostgres(jobsToUpsert);
         if (!pgResult.success && IS_VERCEL) {
           return NextResponse.json(
@@ -106,7 +206,6 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // 2. Local JSON & SQLite mirror (skip on Vercel read-only filesystem)
         let finalTotalJobs = fullJobs?.length ?? jobsToUpsert.length;
         if (!IS_VERCEL) {
           try {
@@ -167,19 +266,21 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        const freshJobs = await getCurrentJobs();
         return NextResponse.json({
           ok: true,
           saved: true,
-          totalJobs: finalTotalJobs,
+          totalJobs: freshJobs.length,
           upsertedJobs: jobsToUpsert.length,
+          jobs: freshJobs,
           message: `บันทึกข้อมูล ${jobsToUpsert.length} รายการลงระบบและ PostgreSQL เรียบร้อยแล้ว`,
         });
       }
 
+      // Case 3: Apply Transport (เดี่ยว)
       if (body.action === "apply_transport" && Array.isArray(body.trips)) {
         const existingTransport = await getCurrentTransport();
 
-        // 1. Merge selected trips
         const map = new Map<string, any>();
         for (const t of existingTransport) {
           const key = (t.tripNo || t.transportNo || "").trim().toUpperCase();
@@ -206,7 +307,6 @@ export async function POST(req: NextRequest) {
 
         const mergedTransport = Array.from(map.values());
 
-        // 2. PostgreSQL persistence (Supabase Cloud + Local LAN Master)
         const pgResult = await upsertTransportToPostgres(tripsToUpsert);
         if (!pgResult.success && IS_VERCEL) {
           return NextResponse.json(
@@ -218,13 +318,9 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // 3. Local JSON & SQLite mirror (skip on Vercel read-only filesystem)
         if (!IS_VERCEL) {
           try {
-            const transportPath = path.resolve(
-              process.cwd(),
-              "data/transport.json"
-            );
+            const transportPath = path.resolve(process.cwd(), "data/transport.json");
             const backupDir = resolveBackupDir();
             await fs.mkdir(backupDir, { recursive: true }).catch(() => {});
             const backupPath = path.join(
@@ -244,43 +340,6 @@ export async function POST(req: NextRequest) {
             );
             await fs.rename(tmpPath, transportPath);
 
-            // Also enrich linked jobs locally with transportNo
-            const jobsPath = path.resolve(process.cwd(), "data/jobs.json");
-            let enrichedJobsCount = 0;
-            try {
-              const rawJ = await fs.readFile(jobsPath, "utf-8");
-              const jobsList = JSON.parse(rawJ);
-              const jobMap = new Map<string, any>();
-              for (const j of jobsList) {
-                if (j.jobNo) jobMap.set(j.jobNo.trim().toUpperCase(), j);
-                if (j.joinNo) {
-                  const jn = j.joinNo
-                    .trim()
-                    .toUpperCase()
-                    .replace(/\s*\((SEA|AIR)\)\s*$/i, "")
-                    .trim();
-                  if (jn && !jobMap.has(jn)) jobMap.set(jn, j);
-                }
-              }
-              for (const trip of body.trips) {
-                if (trip.jobNo) {
-                  const jKey = trip.jobNo.trim().toUpperCase();
-                  const matched = jobMap.get(jKey);
-                  if (matched && !matched.transportNo) {
-                    matched.transportNo = trip.tripNo || trip.transportNo;
-                    enrichedJobsCount++;
-                  }
-                }
-              }
-              if (enrichedJobsCount > 0) {
-                await fs.writeFile(
-                  jobsPath,
-                  JSON.stringify(jobsList, null, 1),
-                  "utf-8"
-                );
-              }
-            } catch {}
-
             const sqliteScript = resolveScript("sqlite_db.py");
             const pythonExe = process.env.PYTHON_PATH || "python";
             if (fsSync.existsSync(sqliteScript)) {
@@ -292,262 +351,367 @@ export async function POST(req: NextRequest) {
         }
 
         const currentJobs = await getCurrentJobs();
+        const currentTransport = await getCurrentTransport();
 
         return NextResponse.json({
           ok: true,
           saved: true,
-          totalTransport: mergedTransport.length,
+          totalTransport: currentTransport.length,
           addedTrips: added,
           updatedTrips: updated,
-          transport: mergedTransport,
+          transport: currentTransport,
           jobs: currentJobs,
-          message: `นำเข้าเที่ยวรถสำเร็จ ${added} เที่ยวใหม่ / อัปเดต ${updated} เที่ยว (ยอดรวม ${mergedTransport.length} เที่ยว) ลงระบบและ PostgreSQL เรียบร้อยแล้ว`,
+          message: `นำเข้าเที่ยวรถสำเร็จ ${added} เที่ยวใหม่ / อัปเดต ${updated} เที่ยว (ยอดรวม ${currentTransport.length} เที่ยว) ลงระบบและ PostgreSQL เรียบร้อยแล้ว`,
         });
       }
     }
 
+    // Case 4: File Upload (Multi-file Drop & Auto-Classification)
     if (contentType.includes("multipart/form-data")) {
       const formData = await req.formData();
-      const file = formData.get("file") as File | null;
-      if (!file) {
+      const directFiles = formData.getAll("files");
+      const singleFiles = formData.getAll("file");
+      const rawFileList: File[] = [];
+
+      for (const item of [...directFiles, ...singleFiles]) {
+        if (item instanceof File && item.size > 0 && !rawFileList.some((f) => f.name === item.name)) {
+          rawFileList.push(item);
+        }
+      }
+
+      if (rawFileList.length === 0) {
         return NextResponse.json(
           { ok: false, error: "ไม่พบไฟล์ที่อัปโหลด" },
           { status: 400 }
         );
       }
 
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const fileNameLower = file.name.toLowerCase();
+      const autoApply = formData.get("autoApply") === "true";
+      const existingJobs = await getCurrentJobs();
+      const existingTransport = await getCurrentTransport();
 
-      // แยกประเภทไฟล์ Master ขนาดใหญ่ (ต้องเป็น .xlsx เท่านั้น เพื่อไม่ให้ไฟล์รายวัน .xls ที่มีคำว่า booking/transport โดนจับผิด)
-      const isBookingMaster =
-        fileNameLower.endsWith(".xlsx") &&
-        (fileNameLower.includes("booking report") ||
-          buffer.length > 2 * 1024 * 1024);
-      const isTransportMaster =
-        fileNameLower.endsWith(".xlsx") && fileNameLower.includes("job_daily");
+      const existingTransMap = new Map<string, any>();
+      existingTransport.forEach((t) => {
+        const key = (t.tripNo || t.transportNo || "").trim().toUpperCase();
+        if (key) existingTransMap.set(key, t);
+      });
 
-      // Case A & B: Full Master Workbooks (Local Python pipeline only)
-      if (isBookingMaster || isTransportMaster) {
-        if (IS_VERCEL) {
-          return NextResponse.json(
-            {
-              ok: false,
-              error:
-                "ไฟล์ Master ขนาดใหญ่ (2026 Booking Report / JOB_Daily) กรุณาซิงค์ผ่านเครื่อง Local (localhost) ส่วนรายงานประจำวัน/รายแผนก (.xls/.xlsx/.csv) สามารถอัปโหลดบนเว็บนี้ได้ทันทีครับ",
-            },
-            { status: 400 }
-          );
+      const existingJobMap = new Map<string, JobRecord>();
+      existingJobs.forEach((j) => {
+        if (j.jobNo) existingJobMap.set(j.jobNo.trim().toUpperCase(), j);
+        if (j.joinNo) {
+          const jn = j.joinNo.trim().toUpperCase().replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim();
+          if (jn) existingJobMap.set(jn, j);
         }
+      });
 
-        const tmpDir = path.join(os.tmpdir(), "perkin-uploads");
-        await fs.mkdir(tmpDir, { recursive: true });
-        const tempPath = path.join(
-          tmpDir,
-          `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_\-\.]/g, "_")}`
-        );
-        await fs.writeFile(tempPath, buffer);
+      const fileResults: Array<{
+        name: string;
+        fileType: string;
+        fileTypeLabel: string;
+        isTransport: boolean;
+        totalRows: number;
+        actionableCount: number;
+      }> = [];
 
-        const pythonExe = process.env.PYTHON_PATH || "python";
+      const combinedTripsMap = new Map<string, any>();
+      const combinedJobsMap = new Map<string, any>();
 
-        if (isBookingMaster) {
-          const rootMaster = path.resolve(
-            process.cwd(),
-            "data/2026 Booking Report.xlsx"
-          );
-          const backupMaster = path.resolve(
-            resolveBackupDir(),
-            `snapshot_${Date.now()}_booking.xlsx`
-          );
-          await fs
-            .mkdir(resolveBackupDir(), { recursive: true })
-            .catch(() => {});
-          await fs.copyFile(rootMaster, backupMaster).catch(() => {});
-          await fs.copyFile(tempPath, rootMaster);
-          await fs.unlink(tempPath).catch(() => {});
+      for (const file of rawFileList) {
+        const bytes = await file.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        const fileNameLower = file.name.toLowerCase();
 
+        const isBookingMaster =
+          fileNameLower.endsWith(".xlsx") &&
+          (fileNameLower.includes("booking report") || buffer.length > 2 * 1024 * 1024);
+        const isTransportMaster =
+          fileNameLower.endsWith(".xlsx") && fileNameLower.includes("job_daily");
+
+        if (isBookingMaster || isTransportMaster) {
+          if (IS_VERCEL) {
+            return NextResponse.json(
+              {
+                ok: false,
+                error:
+                  "ไฟล์ Master ขนาดใหญ่ (2026 Booking Report / JOB_Daily) กรุณาซิงค์ผ่านเครื่อง Local ส่วนไฟล์รายงานประจำวัน (.xls/.xlsx/.csv) รองรับบนเว็บ Production นี้ได้ทันทีครับ",
+              },
+              { status: 400 }
+            );
+          }
+          // On Local machine: allow master pipeline sync
+          const tmpDir = path.join(os.tmpdir(), "perkin-uploads");
+          await fs.mkdir(tmpDir, { recursive: true });
+          const tempPath = path.join(tmpDir, `${Date.now()}_${file.name}`);
+          await fs.writeFile(tempPath, buffer);
+
+          const pythonExe = process.env.PYTHON_PATH || "python";
           const pipelineScript = resolveScript("standardize_pipeline.py");
           if (fsSync.existsSync(pipelineScript)) {
             await execFileAsync(pythonExe, [pipelineScript]);
           }
-
-          const jobs = getJobs();
-          const transport = getTransport();
-
-          if (jobs.length > 0) {
-            await upsertJobsToPostgres(jobs).catch((e) =>
-              console.warn("[UPLOAD] PG jobs sync warning:", e)
-            );
-          }
-          if (transport.length > 0) {
-            await upsertTransportToPostgres(transport).catch((e) =>
-              console.warn("[UPLOAD] PG transport sync warning:", e)
-            );
-          }
+          await fs.unlink(tempPath).catch(() => {});
+          const freshJobs = getJobs();
+          const freshTransport = getTransport();
+          await upsertJobsToPostgres(freshJobs).catch(() => {});
+          await upsertTransportToPostgres(freshTransport).catch(() => {});
 
           return NextResponse.json({
             ok: true,
             directApplied: true,
             fileName: file.name,
-            totalJobs: jobs.length,
-            totalTransport: transport.length,
-            jobs,
-            transport,
-            message: `อัปเดตไฟล์ Master สำเร็จ! พบข้อมูลทั้งหมด ${jobs.length} งาน (บันทึกลง PostgreSQL เรียบร้อย)`,
+            totalJobs: freshJobs.length,
+            totalTransport: freshTransport.length,
+            jobs: freshJobs,
+            transport: freshTransport,
+            message: `อัปเดตไฟล์ Master สำเร็จ! พบข้อมูล ${freshJobs.length} งาน และ ${freshTransport.length} เที่ยวรถ`,
           });
         }
 
-        // isTransportMaster
-        const rootDaily = path.resolve(
-          process.cwd(),
-          "data/JOB_Daily_2026 STATUS_Dashboard.xlsx"
+        // Daily / Departmental reports
+        const parsed = parseUploadedExcelBuffer(buffer, file.name, existingJobs);
+        if (!parsed.ok) continue;
+
+        if (parsed.isTransport && Array.isArray(parsed.transportTrips)) {
+          let actionableTrips = 0;
+          for (const rawT of parsed.transportTrips) {
+            const t = rawT as any;
+            const tripKey = String(t.tripNo || t.transportNo || "").trim().toUpperCase();
+            if (!tripKey) continue;
+            const existingTrip = existingTransMap.get(tripKey);
+            const exists = Boolean(existingTrip);
+
+            const normD = (d: any) => (d ? String(d).trim().slice(0, 10) : "");
+            const incDeliver = normD(t.deliver || t.deliverDate);
+            const exDeliver = normD(existingTrip?.deliver || existingTrip?.deliverDate);
+            const incPickup = normD(t.pickupDate);
+            const exPickup = normD(existingTrip?.pickupDate);
+
+            const transDiffs: string[] = [];
+            if (incDeliver && incDeliver !== exDeliver) {
+              transDiffs.push(`ส่งมอบ: ${exDeliver || "-"} ➔ ${incDeliver}`);
+            }
+            if (incPickup && incPickup !== exPickup) {
+              transDiffs.push(`รับตู้: ${exPickup || "-"} ➔ ${incPickup}`);
+            }
+            const exDriver = String(existingTrip?.driverName || existingTrip?.driver || existingTrip?.driver_name || "").trim();
+            const incDriver = String(t.driverName || t.driver || "").trim();
+            const isDriverChanged = Boolean(exists && incDriver && incDriver !== exDriver);
+            if (isDriverChanged) {
+              transDiffs.push(`คนขับ: ${exDriver || "-"} ➔ ${incDriver}`);
+            }
+
+            const exPlate = String(existingTrip?.plateNo || existingTrip?.plate_no || "").trim();
+            const incPlate = String(t.plateNo || "").trim();
+            const isPlateChanged = Boolean(exists && incPlate && incPlate !== exPlate);
+            if (isPlateChanged) {
+              transDiffs.push(`ทะเบียน: ${exPlate || "-"} ➔ ${incPlate}`);
+            }
+
+            const isDateChanged = exists && transDiffs.length > 0;
+            const isActionable = !exists || isDateChanged;
+            if (isActionable) actionableTrips++;
+
+            const linkedJobClean = String(t.jobNo || "").trim().toUpperCase();
+            const hasLinkedJob = Boolean(linkedJobClean && existingJobMap.has(linkedJobClean));
+
+            const enriched = {
+              ...t,
+              id: `trans-${tripKey}`,
+              actionType: exists ? "update" : "new",
+              isNew: !exists,
+              isDateChanged,
+              isDriverChanged,
+              isPlateChanged,
+              oldDeliverDate: exDeliver || null,
+              dateChangeDiff: transDiffs.join(" • "),
+              hasLinkedJob,
+              validationStatus: "valid",
+              validationNote: !exists
+                ? hasLinkedJob
+                  ? `เที่ยวรถใหม่ • ผูกกับ Job ${linkedJobClean}`
+                  : "เที่ยวรถใหม่ • ขนส่งทั่วไป"
+                : isDateChanged
+                ? `🔄 อัปเดตข้อมูล: ${transDiffs.join(" • ")}`
+                : "⚪ เที่ยวเดิมในระบบ (ข้อมูลตรงกัน)",
+            };
+
+            combinedTripsMap.set(tripKey, enriched);
+          }
+
+          fileResults.push({
+            name: file.name,
+            fileType: "transport",
+            fileTypeLabel: "รายงานการจองรถขนส่ง (Inland Transport)",
+            isTransport: true,
+            totalRows: parsed.transportTrips.length,
+            actionableCount: actionableTrips,
+          });
+        } else if (Array.isArray(parsed.rows)) {
+          let actionableJobs = 0;
+          for (const rawR of parsed.rows) {
+            const r = rawR as any;
+            const key = String(r.jobNo || "").trim().toUpperCase();
+            if (!key) continue;
+
+            const existing = existingJobMap.get(key);
+            const exists = Boolean(existing);
+
+            const isExp = /^(SH)?(SE|AE)/i.test(key);
+            const opDate = isExp
+              ? String(r.etd || r.submitDate || r.eta || "")
+              : String(r.eta || r.submitDate || r.etd || "");
+
+            const isPastOrOld = !exists && Boolean(opDate && opDate < "2026-11-01");
+            const isBlankDummy = !exists && !r.containerType && !r.grossWeight && !r.bl && !r.commodity;
+            const isGenuineNew = !exists && !isPastOrOld && !isBlankDummy;
+
+            const isActionable =
+              isGenuineNew ||
+              (exists && (Boolean(r.isDateChanged) || Boolean(r.isStatusChanged) || Boolean(r.isCustomsChanged)));
+            if (isActionable) actionableJobs++;
+
+            combinedJobsMap.set(key, {
+              ...r,
+              isPastOrOld,
+              isBlankDummy,
+              isGenuineNew,
+            });
+          }
+
+          fileResults.push({
+            name: file.name,
+            fileType: parsed.fileType || "fwd",
+            fileTypeLabel: parsed.fileTypeLabel || "รายงานการขนส่ง",
+            isTransport: false,
+            totalRows: parsed.rows.length,
+            actionableCount: actionableJobs,
+          });
+        }
+      }
+
+      const allTransportTrips = Array.from(combinedTripsMap.values());
+      const allJobRows = Array.from(combinedJobsMap.values());
+
+      // If Auto-Apply is requested: save immediately without waiting for preview
+      if (autoApply) {
+        const actionableJobsToApply: JobRecord[] = [];
+        for (const stg of allJobRows) {
+          if (stg.actionType === "update" && (stg.isDateChanged || stg.isStatusChanged || stg.isCustomsChanged)) {
+            const existing = existingJobMap.get(stg.jobNo.toUpperCase());
+            if (existing) {
+              const updated = { ...existing };
+              if (stg.etd) updated.etd = stg.etd;
+              if (stg.eta) updated.eta = stg.eta;
+              if (stg.clearDate) updated.clearDate = stg.clearDate;
+              if (stg.flightTime) updated.flightTime = stg.flightTime;
+              if (stg.vessel) updated.vessel = stg.vessel;
+              if (stg.bl && !updated.bl) updated.bl = stg.bl;
+              if (stg.isStatusChanged && stg.hasExplicitStatus && stg.status) {
+                updated.status = stg.status;
+                if (stg.statusDetail) updated.statusDetail = stg.statusDetail;
+                if (stg.statusRaw) updated.statusRaw = stg.statusRaw;
+              }
+              if (stg.declarationNo) updated.declarationNo = stg.declarationNo;
+              actionableJobsToApply.push(updated);
+            }
+          } else if (stg.isGenuineNew && stg.actionType === "new") {
+            const isExp = /^(SH)?(SE|AE)/i.test(stg.jobNo);
+            const finalDate = isExp ? stg.etd || stg.eta : stg.eta || stg.etd;
+            const opMonth = finalDate ? finalDate.slice(0, 7) : "2026-11";
+            actionableJobsToApply.push({
+              id: `Upload_${opMonth}_${stg.jobNo}`,
+              jobNo: stg.jobNo,
+              joinNo: stg.joinNo || undefined,
+              service: isExp ? "SEA Export" : "SEA Import",
+              serviceLabel: isExp ? "SEA Export" : "SEA Import",
+              status: stg.status || "In Progress",
+              statusDetail: stg.statusDetail || "Job Control",
+              statusRaw: stg.statusRaw || "Job Control",
+              customer: stg.customer || "—",
+              consignee: "",
+              bl: stg.bl || "",
+              invoiceNo: stg.invoiceNo || "",
+              declarationNo: stg.declarationNo || "",
+              etd: stg.etd || null,
+              eta: stg.eta || null,
+              month: opMonth,
+              year: 2026,
+              ageDays: null,
+              flags: [],
+              jobDate: finalDate || null,
+              draftCustoms: false,
+              customsFiled: Boolean(stg.declarationNo),
+              doReleased: false,
+              cleared: false,
+              advanceDoc: false,
+              draftDate: null,
+              customsDate: null,
+              doDate: null,
+              clearDate: stg.clearDate || null,
+              advanceDate: null,
+              sourceRow: 0,
+              customsStatus: stg.customsStatus || null,
+              csName: stg.csName || "",
+              containerType: stg.containerType || undefined,
+              grossWeight: stg.grossWeight ?? undefined,
+              cbm: stg.cbm ?? undefined,
+              commodity: stg.commodity || undefined,
+              nextAction: "ตรวจปล่อยสินค้า",
+            });
+          }
+        }
+
+        const actionableTripsToApply = allTransportTrips.filter(
+          (t) => t.isNew || t.isDateChanged || t.isDriverChanged
         );
-        await fs.copyFile(tempPath, rootDaily).catch(() => {});
-        await fs.unlink(tempPath).catch(() => {});
 
-        const pipelineScript = resolveScript("standardize_pipeline.py");
-        if (fsSync.existsSync(pipelineScript)) {
-          await execFileAsync(pythonExe, [pipelineScript]);
+        if (actionableJobsToApply.length > 0) {
+          await upsertJobsToPostgres(actionableJobsToApply);
+        }
+        if (actionableTripsToApply.length > 0) {
+          await upsertTransportToPostgres(actionableTripsToApply);
         }
 
-        const jobs = getJobs();
-        const transport = getTransport();
-
-        if (transport.length > 0) {
-          await upsertTransportToPostgres(transport).catch((e) =>
-            console.warn("[UPLOAD] PG transport sync warning:", e)
-          );
-        }
+        const freshJobs = await getCurrentJobs();
+        const freshTransport = await getCurrentTransport();
 
         return NextResponse.json({
           ok: true,
-          directApplied: true,
-          fileName: file.name,
-          totalJobs: jobs.length,
-          totalTransport: transport.length,
-          jobs,
-          transport,
-          message: `อัปเดตไฟล์ Transport สำเร็จ! พบข้อมูล ${transport.length} เที่ยว (บันทึกลง PostgreSQL เรียบร้อย)`,
+          autoApplied: true,
+          filesCount: rawFileList.length,
+          files: fileResults,
+          jobsUpdated: actionableJobsToApply.length,
+          transportUpdated: actionableTripsToApply.length,
+          totalJobs: freshJobs.length,
+          totalTransport: freshTransport.length,
+          jobs: freshJobs,
+          transport: freshTransport,
+          message: `⚡ ซิงค์อัตโนมัติสำเร็จ ${rawFileList.length} ไฟล์! อัปเดตงาน ${actionableJobsToApply.length} รายการ และเที่ยวรถ ${actionableTripsToApply.length} เที่ยวลง Supabase ทันที`,
         });
       }
 
-      // Case C: Incremental Customs / Shipping / Oversea / Air / Transport sheet
-      // Pure Node.js in-memory parsing (zero /var/task disk writes, zero Python required -> works 100% on Vercel & Local)
-      const existingJobs = await getCurrentJobs();
-      const parsed = parseUploadedExcelBuffer(buffer, file.name, existingJobs);
+      // Return unified Staging preview
+      const hasTransport = allTransportTrips.length > 0;
+      const hasJobs = allJobRows.length > 0;
 
-      if (!parsed.ok) {
-        return NextResponse.json(parsed, { status: 400 });
-      }
-
-      // Handle Transport file upload (Inland Transport - รถขนส่ง) -> Return preview for staging first!
-      if (parsed.isTransport && Array.isArray(parsed.transportTrips)) {
-        const existingTransport = await getCurrentTransport();
-
-        const existingTransMap = new Map<string, any>();
-        for (const t of existingTransport) {
-          const key = (t.tripNo || t.transportNo || "").trim().toUpperCase();
-          if (key) existingTransMap.set(key, t);
-        }
-
-        // เช็คว่ามีรายการที่ตรงกับ Job No หรือ Join No ที่มีในระบบหรือไม่ (ห้ามตัด prefix SH เพราะเลขรันแยกแผนกกัน)
-        const jobNoSet = new Set<string>();
-        for (const j of existingJobs) {
-          if (j.jobNo) jobNoSet.add(j.jobNo.trim().toUpperCase());
-          if (j.joinNo) {
-            const jn = j.joinNo
-              .trim()
-              .toUpperCase()
-              .replace(/\s*\((SEA|AIR)\)\s*$/i, "")
-              .trim();
-            if (jn) jobNoSet.add(jn);
-          }
-        }
-
-        let newTripsCount = 0;
-        let existingTripsCount = 0;
-        let dateUpdateTripsCount = 0;
-
-        const enrichedTrips = parsed.transportTrips.map((t: any, idx: number) => {
-          const tripKey = (t.tripNo || t.transportNo || "").trim().toUpperCase();
-          const existingTrip = existingTransMap.get(tripKey);
-          const exists = Boolean(existingTrip);
-
-          const normD = (d: any) => (d ? String(d).trim().slice(0, 10) : "");
-          const incDeliver = normD(t.deliver || t.deliverDate);
-          const exDeliver = normD(
-            existingTrip?.deliver || existingTrip?.deliverDate
-          );
-          const incPickup = normD(t.pickupDate);
-          const exPickup = normD(existingTrip?.pickupDate);
-
-          const transDiffs: string[] = [];
-          if (incDeliver && incDeliver !== exDeliver) {
-            transDiffs.push(`ส่งมอบ: ${exDeliver || "-"} ➔ ${incDeliver}`);
-          }
-          if (incPickup && incPickup !== exPickup) {
-            transDiffs.push(`รับตู้: ${exPickup || "-"} ➔ ${incPickup}`);
-          }
-
-          const isDateChanged = exists && transDiffs.length > 0;
-          const dateChangeDiff = transDiffs.join(" • ");
-
-          if (!exists) {
-            newTripsCount++;
-          } else if (isDateChanged) {
-            dateUpdateTripsCount++;
-          } else {
-            existingTripsCount++;
-          }
-
-          const linkedJobClean = (t.jobNo || "").trim().toUpperCase();
-          const hasLinkedJob = Boolean(
-            linkedJobClean && jobNoSet.has(linkedJobClean)
-          );
-
-          return {
-            ...t,
-            id: `trans-${idx}-${tripKey}`,
-            actionType: exists ? "update" : "new",
-            isNew: !exists,
-            isDateChanged,
-            oldDeliverDate: exDeliver || null,
-            dateChangeDiff,
-            hasLinkedJob,
-            validationStatus: "valid",
-            validationNote: !exists
-              ? hasLinkedJob
-                ? `เที่ยวรถใหม่ • ผูกกับ Job ${linkedJobClean}`
-                : "เที่ยวรถใหม่ • ขนส่งทั่วไป (ไม่ผูก Job)"
-              : isDateChanged
-              ? `🔄 อัปเดตวันส่งมอบ: ${dateChangeDiff} (อัปเดตทับเที่ยวเดิม ไม่บวม)`
-              : "⚪ เที่ยวรถเดิมในระบบ (วันเวลาไม่เปลี่ยน • ข้ามเพื่อไม่ให้งานบวม)",
-          };
-        });
-
-        return NextResponse.json({
-          ok: true,
-          isTransport: true,
-          directApplied: false,
-          fileName: file.name,
-          fileType: "transport",
-          fileTypeLabel: "รายงานการจองรถขนส่งในประเทศ (Inland Transport)",
-          totalRows: enrichedTrips.length,
-          newTripsCount,
-          existingTripsCount,
-          dateUpdateTripsCount,
-          transportTrips: enrichedTrips,
-          rows: [],
-          message: `อ่านไฟล์รายงานการจองรถขนส่งสำเร็จ ${enrichedTrips.length} เที่ยวรถ (พบเที่ยวรถใหม่ ${newTripsCount} เที่ยว) · กรุณาตรวจสอบข้อมูลก่อนกดยืนยันนำเข้า`,
-        });
-      }
-
-      return NextResponse.json(parsed);
+      return NextResponse.json({
+        ok: true,
+        multiple: rawFileList.length > 1,
+        filesCount: rawFileList.length,
+        files: fileResults,
+        hasTransport,
+        hasJobs,
+        isTransport: hasTransport && !hasJobs,
+        totalRows: allJobRows.length,
+        rows: allJobRows,
+        transportTrips: allTransportTrips,
+        message: `อ่านข้อมูลสำเร็จ ${rawFileList.length} ไฟล์ (${allJobRows.length} งาน • ${allTransportTrips.length} เที่ยวรถ)`,
+      });
     }
 
     return NextResponse.json(
-      { ok: false, error: "รองรับเฉพาะ multipart/form-data" },
+      { ok: false, error: "รองรับเฉพาะ multipart/form-data หรือ JSON" },
       { status: 400 }
     );
   } catch (err: unknown) {
