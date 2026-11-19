@@ -964,6 +964,7 @@ export function StagingUploadView({
             !d || ["-", "—", "N/A", "NONE", "NULL", "NORMAL", "GENERAL", "IMPORT", "EXPORT", "TRANSIT", "RE-EXPORT"].includes(String(d).trim().toUpperCase());
           if (!isInvalidDecl(stg.declarationNo)) {
             target.declarationNo = String(stg.declarationNo).trim();
+            target.draftCustoms = true;
             target.customsFiled = true;
             if (!target.customsDate) target.customsDate = stg.submitDate || stg.clearDate || null;
           }
@@ -1064,7 +1065,7 @@ export function StagingUploadView({
         ageDays: null,
         flags: [],
         jobDate: finalOpDate || null,
-        draftCustoms: isDone,
+        draftCustoms: isDone || Boolean(stg.declarationNo) || Boolean(stg.customsStatus),
         customsFiled: isDone || Boolean(stg.declarationNo),
         doReleased: isDone,
         cleared: isDone,

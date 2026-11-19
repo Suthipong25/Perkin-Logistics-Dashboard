@@ -184,7 +184,7 @@ export default function OverviewView({
       if (job.status === "Completed") m.completed += 1;
     }
     const months = Array.from(monthMap.values())
-      .filter((m) => m.month >= "2026-06" && m.month <= "2026-10")
+      .filter((m) => m.month >= "2026-06" && m.month <= "2026-12")
       .sort((a, b) => a.month.localeCompare(b.month));
 
     // 1.5 ดึงงานที่เลยกำหนด ETD สูงสุดเพื่อแสดงใน Action Queue
@@ -294,7 +294,7 @@ export default function OverviewView({
   }, [jobs]);
 
   // คำนวณยอดรายวัน (วันที่ 1 - 31) ของเดือนที่กำลังเลือก (ยึดหลัก: ETD จับ Export ETA จับ Import)
-  const activeTargetMonth = monthFilter === "all" ? "2026-09" : monthFilter;
+  const activeTargetMonth = monthFilter === "all" ? "2026-11" : monthFilter;
   const dailyData = useMemo(() => {
     const parts = activeTargetMonth.split("-");
     const year = Number(parts[0]) || 2026;

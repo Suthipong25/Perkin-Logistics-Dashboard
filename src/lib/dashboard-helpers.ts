@@ -124,7 +124,11 @@ const SHEET_MONTH_MAP: Record<string, string> = {
 
 export function getJobMonth(job: JobRecord): string | null {
   if (job.month && /^\d{4}-\d{2}/.test(job.month)) return job.month.slice(0, 7);
-  if (job.etd && /^\d{4}-\d{2}/.test(job.etd)) return job.etd.slice(0, 7);
+  const isExp =
+    (job.service || "").includes("Export") ||
+    /^(SH)?(SE|AE)/i.test(job.jobNo || "");
+  const primaryDate = isExp ? (job.etd || job.eta) : (job.eta || job.etd);
+  if (primaryDate && /^\d{4}-\d{2}/.test(primaryDate)) return primaryDate.slice(0, 7);
   if (job.jobDate && /^\d{4}-\d{2}/.test(job.jobDate)) return job.jobDate.slice(0, 7);
   if (job.sourceSheet && SHEET_MONTH_MAP[job.sourceSheet]) return SHEET_MONTH_MAP[job.sourceSheet];
   const m = job.jobNo.match(/^[A-Za-z]+(\d{2})(\d{2})/);
@@ -135,7 +139,7 @@ export function getJobMonth(job: JobRecord): string | null {
 }
 
 /**
- * คำนวณจำนวนวันที่เปิดงานมาแล้ว เทียบกับกำหนดส่งมอบจริง (ณ วันที่ปัจจุบัน 30 ต.ค. 2026)
+ * คำนวณจำนวนวันที่เปิดงานมาแล้ว เทียบกับกำหนดส่งมอบจริง (ณ วันที่ปัจจุบันแบบไดนามิก)
  * - งานขาเข้า (Import): ยึดตาม ETA (วันเรือ/เครื่องบินถึงไทย) หากมีข้อมูล เพื่อไม่ให้เกิด false overdue ระหว่างที่เรือยังเดินทางอยู่กลางทะเล
  * - งานขาออก (Export): ยึดตาม ETD (วันเรือ/เครื่องบินตัดรอบออกจากไทย)
  */
@@ -146,7 +150,9 @@ export function daysOpen(job: JobRecord): number | null {
     job.jobNo.startsWith("AE") ||
     job.jobNo.startsWith("SHSE") ||
     job.jobNo.startsWith("SHAE");
-  const targetDateStr = (!isExport && job.eta && isValidIso(job.eta)) ? job.eta : job.etd;
+  const targetDateStr = (!isExport && job.eta && isValidIso(job.eta))
+    ? job.eta
+    : (job.etd && isValidIso(job.etd) ? job.etd : job.jobDate);
   if (!isValidIso(targetDateStr)) return null;
 
   // Sanity Guard: ป้องกันวันค้างเทียม (False Overdue) จากวันที่สลับฟอร์แมต
@@ -163,7 +169,8 @@ export function daysOpen(job: JobRecord): number | null {
 
   const targetTime = new Date(`${targetDateStr!.slice(0, 10)}T00:00:00+07:00`).getTime();
   if (isNaN(targetTime)) return null;
-  const today = new Date("2026-10-30T00:00:00+07:00").getTime();
+  const nowBkk = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const today = new Date(`${nowBkk}T00:00:00+07:00`).getTime();
   return Math.floor((today - targetTime) / 86400000);
 }
 
@@ -207,12 +214,19 @@ export function statusMeta(job: JobRecord) {
       dot: "bg-[#6e7e91]",
       badge: "bg-slate-100 text-[#526275] border-slate-300",
     };
-  if (job.statusDetail === "Waiting")
+  if (job.statusDetail === "Waiting" || job.statusDetail === "Job Waiting")
     return {
       key: "Waiting",
       label: "รอเอกสาร",
       dot: "bg-[#073766]",
       badge: "bg-[#eaf4fc] text-[#073766] border-[#073766]/25",
+    };
+  if (job.status === "Booking" || job.statusDetail === "Job Booking")
+    return {
+      key: "Booking",
+      label: "จองระวาง",
+      dot: "bg-[#5288b6]",
+      badge: "bg-[#eaf4fc] text-[#073766] border-[#5288b6]/30",
     };
   return {
     key: "Control",
@@ -224,13 +238,20 @@ export function statusMeta(job: JobRecord) {
 
 /**
  * คำนวณขั้นตอนถัดไปที่ต้องทำ (Next Action) จาก Milestone ศุลกากร 5 ขั้นตอน
+ * รองรับการอนุมานย้อนกลับ: หากมีเลขที่ใบขนหรือยิงใบขนแล้ว ย่อมผ่านขั้นออก Draft แล้วเสมอ
  */
 export function computeNextAction(job: JobRecord): string | null {
   if (!isOpen(job)) return null;
-  if (!job.draftCustoms) return "รอออก Draft ใบขน";
-  if (!job.customsFiled) return "รอยิงใบขนจริง";
-  if (!job.doReleased) return "รอแลก DO";
-  if (!job.cleared) return "รอ Clear & Pickup";
+  const cSt = job.customsStatus || job.updateStatus || "";
+  const isCleared = Boolean(job.cleared || cSt === "0409");
+  const isDoDone = Boolean(job.doReleased || isCleared);
+  const isFiled = Boolean(job.customsFiled || job.declarationNo || ["0209", "0309", "0409"].includes(cSt) || isDoDone);
+  const isDrafted = Boolean(job.draftCustoms || cSt === "0109" || isFiled);
+
+  if (!isDrafted) return "รอออก Draft ใบขน";
+  if (!isFiled) return "รอยิงใบขนจริง";
+  if (!isDoDone) return "รอแลก DO";
+  if (!isCleared) return "รอ Clear & Pickup";
   if (!job.advanceDoc) return "รอเอกสารเบิกเงิน";
   return "ติดตามปิดชุดงาน";
 }

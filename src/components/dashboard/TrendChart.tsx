@@ -332,7 +332,7 @@ export default function TrendChart({
               setViewMode("daily");
               setHoverIndex(null);
               if (activeMonth === "all") {
-                onSelectMonth("2026-10");
+                onSelectMonth("2026-11");
               }
             }}
             className={`px-3.5 py-1.5 rounded-[6px] transition-[background-color,color,box-shadow] duration-150 cursor-pointer flex items-center gap-2 ${
@@ -369,7 +369,7 @@ export default function TrendChart({
               <span className="text-[#526275] font-medium hidden sm:inline">เดือน:</span>
               <select
                 aria-label="เลือกเดือนสำหรับดูแผนภูมิแท่งรายวัน"
-                value={activeMonth === "all" ? "2026-09" : activeMonth}
+                value={activeMonth === "all" ? "2026-11" : activeMonth}
                 onChange={(e) => {
                   onSelectMonth(e.target.value);
                   setHoverIndex(null);

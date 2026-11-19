@@ -749,6 +749,7 @@ export async function POST(req: NextRequest) {
               }
               if (stg.declarationNo) {
                 updated.declarationNo = stg.declarationNo;
+                updated.draftCustoms = true;
                 updated.customsFiled = true;
                 if (!updated.customsDate) updated.customsDate = stg.submitDate || stg.clearDate || null;
               }
@@ -764,7 +765,7 @@ export async function POST(req: NextRequest) {
               ? (isExp ? "AIR Export" : "AIR Import")
               : (isExp ? "SEA Export" : "SEA Import");
 
-            const finalDate = isExp ? stg.etd || stg.eta : stg.eta || stg.etd;
+            const finalDate = isExp ? (stg.etd || stg.submitDate || stg.eta) : (stg.eta || stg.submitDate || stg.etd);
             const opMonth = finalDate ? finalDate.slice(0, 7) : "2026-11";
             const isDone = stg.status === "Completed" || stg.customsStatus === "0409";
 
@@ -789,7 +790,7 @@ export async function POST(req: NextRequest) {
               ageDays: null,
               flags: [],
               jobDate: finalDate || null,
-              draftCustoms: isDone,
+              draftCustoms: isDone || Boolean(stg.declarationNo) || Boolean(stg.customsStatus),
               customsFiled: isDone || Boolean(stg.declarationNo),
               doReleased: isDone,
               cleared: isDone,
