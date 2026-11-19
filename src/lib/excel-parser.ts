@@ -60,12 +60,23 @@ function cleanText(v: unknown): string {
   return str.replace(/[\t\u00a0]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+const MONTH_MAP: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+  "ม.ค.": "01", "ก.พ.": "02", "มี.ค.": "03", "เม.ย.": "04", "พ.ค.": "05", "มิ.ย.": "06",
+  "ก.ค.": "07", "ส.ค.": "08", "ก.ย.": "09", "ต.ค.": "10", "พ.ย.": "11", "ธ.ค.": "12",
+  "มกราคม": "01", "กุมภาพันธ์": "02", "มีนาคม": "03", "เมษายน": "04", "พฤษภาคม": "05", "มิถุนายน": "06",
+  "กรกฎาคม": "07", "สิงหาคม": "08", "กันยายน": "09", "ตุลาคม": "10", "พฤศจิกายน": "11", "ธันวาคม": "12"
+};
+
 /**
  * แปลงค่าวันที่ทุกรูปแบบจาก Excel ให้เป็นมาตรฐาน ISO "YYYY-MM-DD"
  * รองรับ:
  *  - JS Date object
  *  - Excel Serial Number (เช่น 46334 -> นับจาก 1899-12-30)
  *  - ISO string ("2026-11-09...")
+ *  - แก้ปัญหาสลับวัน/เดือน (US Locale vs Thai Locale): เช่น 11/19/2026 -> 2026-11-19
+ *  - วันที่แบบชื่อเดือนภาษาอังกฤษ/ไทย: "19-Nov-2026", "19 พ.ย. 2569", "Nov 19, 2026"
  *  - รูปแบบไทย/ยุโรป DD/MM/YYYY หรือ DD-MM-YY (รองรับ พ.ศ. > 2400 โดยลบ 543 อัตโนมัติ)
  */
 function excelDateToIso(val: unknown): string | null {
@@ -76,7 +87,7 @@ function excelDateToIso(val: unknown): string | null {
     const d = String(val.getDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
   }
-  const valStr = String(val).trim();
+  const valStr = String(val).replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
   if (!valStr) return null;
 
   const num = Number(valStr);
@@ -89,22 +100,70 @@ function excelDateToIso(val: unknown): string | null {
     return `${y}-${m}-${d}`;
   }
 
-  const isoMatch = valStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const isoMatch = valStr.match(/^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})/);
   if (isoMatch) {
-    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+    const y = isoMatch[1];
+    const m = isoMatch[2].padStart(2, "0");
+    const d = isoMatch[3].padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  // Handle Named Months e.g. "19-Nov-2026", "19-Nov-26", "19 Nov 2026"
+  const namedMatch1 = valStr.match(/^(\d{1,2})[\s\-/]([A-Za-zก-๙.]+?)[\s\-/](\d{2,4})/);
+  if (namedMatch1) {
+    const d = namedMatch1[1].padStart(2, "0");
+    const monStr = namedMatch1[2].toLowerCase().replace(/\./g, "");
+    const mo = MONTH_MAP[monStr] || MONTH_MAP[namedMatch1[2].toLowerCase()];
+    if (mo) {
+      let y = parseInt(namedMatch1[3], 10);
+      if (y < 100) y += 2000;
+      else if (y > 2400) y -= 543;
+      return `${String(y).padStart(4, "0")}-${mo}-${d}`;
+    }
+  }
+
+  // Handle "Nov 19, 2026"
+  const namedMatch2 = valStr.match(/^([A-Za-zก-๙.]+?)[\s\-/](\d{1,2})[,\s\-/]+(\d{2,4})/);
+  if (namedMatch2) {
+    const d = namedMatch2[2].padStart(2, "0");
+    const monStr = namedMatch2[1].toLowerCase().replace(/\./g, "");
+    const mo = MONTH_MAP[monStr] || MONTH_MAP[namedMatch2[1].toLowerCase()];
+    if (mo) {
+      let y = parseInt(namedMatch2[3], 10);
+      if (y < 100) y += 2000;
+      else if (y > 2400) y -= 543;
+      return `${String(y).padStart(4, "0")}-${mo}-${d}`;
+    }
   }
 
   const dmyMatch = valStr.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})/);
   if (dmyMatch) {
-    const d = dmyMatch[1].padStart(2, "0");
-    const mo = dmyMatch[2].padStart(2, "0");
+    const p1 = parseInt(dmyMatch[1], 10);
+    const p2 = parseInt(dmyMatch[2], 10);
     let y = parseInt(dmyMatch[3], 10);
     if (y < 100) y += 2000;
     else if (y > 2400) y -= 543;
-    return `${String(y).padStart(4, "0")}-${mo}-${d}`;
+
+    let d: number;
+    let mo: number;
+
+    // Disambiguation between US (MM/DD/YYYY) and Thai/EU (DD/MM/YYYY)
+    if (p2 > 12 && p1 <= 12) {
+      // Example: 11/19/2026 -> 11 is month, 19 is day
+      mo = p1;
+      d = p2;
+    } else {
+      // Standard Perkin Thai logistics: DD/MM/YYYY
+      d = p1;
+      mo = p2;
+    }
+
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${String(y).padStart(4, "0")}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
   }
 
-  return valStr.length <= 10 ? valStr : null;
+  return valStr.length <= 10 && /^\d{4}-\d{2}-\d{2}$/.test(valStr) ? valStr : null;
 }
 
 interface MasterIndex {
@@ -119,7 +178,7 @@ interface MasterIndex {
  *  - งานเดิม ("update") ที่ต้องเทียบว่าวัน ETD/ETA/เวลา เปลี่ยนหรือไม่
  *
  * หมายเหตุสำคัญ:
- *  - จับคู่แบบตรงตัว (exact match) เฉพาะ jobNo, joinNo (ตัด "(SEA)"/"(AIR)" ท้ายคำออก), และ hbl
+ *  - จับคู่แบบตรงตัว (exact match) เฉพาะ jobNo, joinNo (ตัด "(SEA)"/"(AIR)" ท้ายคำออก), และ bl
  *  - ห้ามตัด "SH" ออกจาก SHSI/SHSE/SHAI เพราะ Shipping และ Oversea รันเลขคนละชุดกัน
  */
 function buildMasterIndex(jobs: JobRecord[]): MasterIndex {
@@ -138,67 +197,160 @@ function buildMasterIndex(jobs: JobRecord[]): MasterIndex {
       byJoin.set(jraw, j);
     }
 
-    const hbl = (j.hbl || "").trim().toUpperCase();
-    if (hbl) byBl.set(hbl, j);
+    const bl = (j.bl || j.hbl || "").trim().toUpperCase();
+    if (bl && bl.length >= 5) byBl.set(bl, j);
   }
 
   return { byNo, byJoin, byBl };
 }
 
 /**
- * เทียบวันกำหนดการ (ETD, ETA, Flight Time) ระหว่างไฟล์ที่อัปโหลดเข้ามากับงานเดิมในระบบ
- * ใช้ป้องกัน "งานบวม" (Anti-Bloat): ถ้าวันเวลาไม่เปลี่ยน ระบบจะติ๊กข้ามให้อัตโนมัติ
+ * ตรวจสอบความแตกต่างระหว่างข้อมูลงานที่อัปโหลดเข้ามากับงานเดิมในฐานข้อมูล (Multi-Attribute Precision Diff)
+ * ครอบคลุม: วันกำหนดการ (ETD/ETA/เวลา/วันตรวจปล่อย), สถานะใบขน, เลขที่ใบขน, สถานะงาน, และ Metadata สำคัญ
  */
-function checkDateDiff(
-  incomingEtd: string | null,
-  incomingEta: string | null,
-  incomingTime: string | null,
+interface JobDiffResult {
+  isChanged: boolean;
+  isDateChanged: boolean;
+  isCustomsChanged: boolean;
+  isStatusChanged: boolean;
+  diffStr: string;
+  exEtd: string | null;
+  exEta: string | null;
+  exTime: string | null;
+  note: string;
+}
+
+function checkJobDiff(
+  incoming: {
+    etdIso?: string | null;
+    etaIso?: string | null;
+    flightTime?: string | null;
+    clearIso?: string | null;
+    declarationNo?: string | null;
+    customsStatus?: string | null;
+    status?: string | null;
+    hasExplicitStatus?: boolean;
+    csName?: string | null;
+    customer?: string | null;
+    vessel?: string | null;
+    feeder?: string | null;
+    flightNo?: string | null;
+    bl?: string | null;
+  },
   matchJob?: JobRecord
-) {
+): JobDiffResult {
   if (!matchJob) {
     return {
       isChanged: false,
+      isDateChanged: false,
+      isCustomsChanged: false,
+      isStatusChanged: false,
       diffStr: "",
-      exEtd: null as string | null,
-      exEta: null as string | null,
-      exTime: null as string | null,
+      exEtd: null,
+      exEta: null,
+      exTime: null,
+      note: "✨ งานใหม่",
     };
   }
+
   const normD = (d: unknown) => (d ? String(d).trim().slice(0, 10) : "");
-  const incEtd = normD(incomingEtd);
+  const incEtd = normD(incoming.etdIso);
   const exEtd = normD(matchJob.etd || matchJob.submitDate);
-  const incEta = normD(incomingEta);
+  const incEta = normD(incoming.etaIso);
   const exEta = normD(matchJob.eta);
-  let incTime = (incomingTime || "").trim();
+  let incTime = (incoming.flightTime || "").trim();
   if (incTime === "00:00") incTime = "";
   let exTime = (matchJob.flightTime || "").trim();
   if (exTime === "00:00") exTime = "";
+  const incClear = normD(incoming.clearIso);
+  const exClear = normD(matchJob.clearDate);
 
-  const diffs: string[] = [];
-  if (incEtd && incEtd !== exEtd) {
-    diffs.push(`ETD: ${exEtd || "-"} ➔ ${incEtd}`);
+  const dateDiffs: string[] = [];
+  if (incEtd && incEtd !== exEtd) dateDiffs.push(`ETD: ${exEtd || "-"} ➔ ${incEtd}`);
+  if (incEta && incEta !== exEta) dateDiffs.push(`ETA: ${exEta || "-"} ➔ ${incEta}`);
+  if (incTime && incTime !== exTime) dateDiffs.push(`เวลา: ${exTime || "-"} ➔ ${incTime}`);
+  if (incClear && incClear !== exClear) dateDiffs.push(`ตรวจปล่อย: ${exClear || "-"} ➔ ${incClear}`);
+  const isDateChanged = dateDiffs.length > 0;
+
+  const customsDiffs: string[] = [];
+  const isInvalidDecl = (d?: string | null) =>
+    !d || ["-", "—", "N/A", "NONE", "NULL", "NORMAL", "GENERAL", "IMPORT", "EXPORT", "TRANSIT", "RE-EXPORT"].includes(String(d).trim().toUpperCase());
+
+  const incDecl = String(incoming.declarationNo || "").trim();
+  const exDecl = String(matchJob.declarationNo || "").trim();
+  if (!isInvalidDecl(incDecl) && incDecl !== exDecl) {
+    customsDiffs.push(`ใบขน: ${exDecl || "-"} ➔ ${incDecl}`);
   }
-  if (incEta && incEta !== exEta) {
-    diffs.push(`ETA: ${exEta || "-"} ➔ ${incEta}`);
+
+  const rank = (s?: string | null) => ["0109", "0209", "0309", "0409"].indexOf(s || "");
+  const incRank = rank(incoming.customsStatus);
+  const exRank = rank(matchJob.customsStatus);
+  if (incoming.customsStatus && (incRank > exRank || (!matchJob.customsStatus && incRank >= 0))) {
+    customsDiffs.push(`สถานะใบขน: ${matchJob.customsStatus || "-"} ➔ ${incoming.customsStatus}`);
   }
-  if (incTime && incTime !== exTime) {
-    diffs.push(`เวลา: ${exTime || "-"} ➔ ${incTime}`);
+  const isCustomsChanged = customsDiffs.length > 0;
+
+  const statusDiffs: string[] = [];
+  if (incoming.hasExplicitStatus && incoming.status && incoming.status !== matchJob.status) {
+    statusDiffs.push(`สถานะงาน: ${matchJob.status || "-"} ➔ ${incoming.status}`);
+  } else if (incoming.customsStatus === "0409" && matchJob.status !== "Completed") {
+    statusDiffs.push(`สถานะงาน: ${matchJob.status || "-"} ➔ Completed (0409)`);
   }
+  const isStatusChanged = statusDiffs.length > 0;
+
+  const metaDiffs: string[] = [];
+  const incVessel = String(incoming.vessel || incoming.feeder || "").trim();
+  const exVessel = String(matchJob.vessel || matchJob.feeder || "").trim();
+  if (incVessel && incVessel !== exVessel && !exVessel) {
+    metaDiffs.push(`สายเรือ: ${incVessel}`);
+  }
+  const incFlight = String(incoming.flightNo || "").trim();
+  const exFlight = String(matchJob.flightNo || "").trim();
+  if (incFlight && incFlight !== exFlight && !exFlight) {
+    metaDiffs.push(`เที่ยวบิน: ${incFlight}`);
+  }
+  const incCs = String(incoming.csName || "").trim();
+  const exCs = String(matchJob.csName || "").trim();
+  if (incCs && incCs !== "—" && (!exCs || exCs === "—")) {
+    metaDiffs.push(`CS: ${incCs}`);
+  }
+  const incCust = String(incoming.customer || "").trim();
+  const exCust = String(matchJob.customer || "").trim();
+  if (incCust && incCust !== "—" && incCust !== "ลูกค้าใหม่" && (!exCust || exCust === "—" || exCust === "ลูกค้าใหม่")) {
+    metaDiffs.push(`ลูกค้า: ${incCust}`);
+  }
+
+  const allDiffs = [...dateDiffs, ...customsDiffs, ...statusDiffs, ...metaDiffs];
+  const isChanged = allDiffs.length > 0;
+  const diffStr = allDiffs.join(" • ");
+  const note = isChanged
+    ? `🔄 อัปเดตข้อมูล: ${diffStr} (อัปเดตทับงานเดิม ไม่เพิ่มแถว)`
+    : "⚪ งานเดิมในระบบแล้ว (ข้อมูลตรงกัน • ข้ามเพื่อไม่ให้งานบวม)";
 
   return {
-    isChanged: diffs.length > 0,
-    diffStr: diffs.join(" • "),
+    isChanged,
+    isDateChanged,
+    isCustomsChanged,
+    isStatusChanged,
+    diffStr,
     exEtd: exEtd || null,
     exEta: exEta || null,
     exTime: exTime || null,
+    note,
   };
 }
 
 /**
  * ตัด tag โหมดการขนส่งท้ายเลขงาน เช่น "SI26100024 (SEA)" -> "SI26100024"
  */
-function stripModeSuffix(val: string): string {
-  return val.replace(/\s*\((SEA|AIR)\)\s*$/i, "").trim().toUpperCase();
+export function stripModeSuffix(val: string): string {
+  if (!val) return "";
+  return String(val)
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s*[\(\[\{]?(SEA|AIR)[\)\]\}]?\s*$/i, "")
+    .replace(/\s*-\s*(SEA|AIR)\s*$/i, "")
+    .trim()
+    .toUpperCase();
 }
 
 /**
@@ -246,17 +398,18 @@ function parseFwdSea2Row(rawRows: string[][], idx: MasterIndex) {
         idx.byNo.get(jobClean) ||
         (hbl ? idx.byBl.get(hbl.toUpperCase()) : undefined);
       const actionType = match ? "update" : "new";
-      const { isChanged, diffStr, exEtd, exEta } = checkDateDiff(
-        etdIso,
-        etaIso,
-        null,
+      const { isChanged, isDateChanged, isCustomsChanged, isStatusChanged, diffStr, exEtd, exEta, note } = checkJobDiff(
+        {
+          etdIso,
+          etaIso,
+          csName,
+          customer,
+          vessel: feeder,
+          feeder,
+          bl: hbl || mbl,
+        },
         match
       );
-      const note = match
-        ? isChanged
-          ? `🔄 อัปเดตกำหนดการ: ${diffStr} (อัปเดตทับงานเดิม ไม่เพิ่มแถว)`
-          : "⚪ งานเดิมในระบบแล้ว (วันเวลาไม่เปลี่ยน • ข้ามเพื่อไม่ให้งานบวม)"
-        : "✨ งานใหม่จาก FWD (Sea Forwarding)";
 
       rows.push({
         id: `fwd-sea-${r}-${jobClean}`,
@@ -287,12 +440,15 @@ function parseFwdSea2Row(rawRows: string[][], idx: MasterIndex) {
         pod,
         loadingDate,
         actionType,
-        isDateChanged: isChanged,
+        isChanged,
+        isDateChanged,
+        isCustomsChanged,
+        isStatusChanged,
         dateChangeDiff: diffStr,
         oldEtd: exEtd,
         oldEta: exEta,
         validationStatus: "valid",
-        validationNote: note,
+        validationNote: match ? note : "✨ งานใหม่จาก FWD (Sea Forwarding)",
       });
       r += 2;
     } else {
@@ -347,17 +503,18 @@ function parseFwdAir2Row(rawRows: string[][], idx: MasterIndex) {
         idx.byNo.get(jobClean) ||
         (hawb ? idx.byBl.get(hawb.toUpperCase()) : undefined);
       const actionType = match ? "update" : "new";
-      const { isChanged, diffStr, exEtd, exEta, exTime } = checkDateDiff(
-        jobDateIso,
-        etaIso,
-        flightTime,
+      const { isChanged, isDateChanged, isCustomsChanged, isStatusChanged, diffStr, exEtd, exEta, exTime, note } = checkJobDiff(
+        {
+          etdIso: jobDateIso,
+          etaIso,
+          flightTime,
+          flightNo: flight,
+          csName,
+          customer,
+          bl: hawb || mawb,
+        },
         match
       );
-      const note = match
-        ? isChanged
-          ? `🔄 อัปเดตกำหนดการ: ${diffStr} (อัปเดตทับงานเดิม ไม่เพิ่มแถว)`
-          : "⚪ งานเดิมในระบบแล้ว (วันเวลาไม่เปลี่ยน • ข้ามเพื่อไม่ให้งานบวม)"
-        : "✨ งานใหม่จาก FWD (Air Forwarding)";
 
       rows.push({
         id: `fwd-air-${r}-${jobClean}`,
@@ -386,13 +543,16 @@ function parseFwdAir2Row(rawRows: string[][], idx: MasterIndex) {
         flightTime: flightTime && flightTime !== "00:00" ? flightTime : null,
         pod,
         actionType,
-        isDateChanged: isChanged,
+        isChanged,
+        isDateChanged,
+        isCustomsChanged,
+        isStatusChanged,
         dateChangeDiff: diffStr,
         oldEtd: exEtd,
         oldEta: exEta,
         oldFlightTime: exTime,
         validationStatus: "valid",
-        validationNote: note,
+        validationNote: match ? note : "✨ งานใหม่จาก FWD (Air Forwarding)",
       });
       r += 2;
     } else {
@@ -432,8 +592,8 @@ function parseTransportRows(rawRows: string[][]) {
     if (lineStr.includes("TOTAL :") || lineStr.includes("TOTAL:")) continue;
 
     const val = (i: number) => (i >= 0 && i < row.length ? cleanText(row[i]) : "");
-    const col2 = val(2).toUpperCase();
-    const col3 = val(3).toUpperCase();
+    const col2 = stripModeSuffix(val(2));
+    const col3 = stripModeSuffix(val(3));
 
     const tsNo = col3.startsWith("TS")
       ? col3
@@ -700,15 +860,29 @@ function parseSheetRows(
       if (!isNaN(n)) cbmVal = n;
     }
 
+    const rawMbl = cleanText(val(idxMbl));
+    const rawHbl = cleanText(val(idxHbl));
+    const blKey = stripModeSuffix(rawMbl || rawHbl);
+
     const match =
       idx.byNo.get(effectiveKey) ||
       idx.byJoin.get(effectiveKey) ||
-      (joinNo ? idx.byNo.get(joinNo) || idx.byJoin.get(joinNo) : undefined);
+      (joinNo ? idx.byNo.get(joinNo) || idx.byJoin.get(joinNo) : undefined) ||
+      (blKey && blKey.length >= 6 ? idx.byBl.get(blKey) : undefined);
     const actionType = match ? "update" : "new";
-    const { isChanged, diffStr, exEtd, exEta } = checkDateDiff(
-      etdIso,
-      etaIso,
-      null,
+    const { isChanged, isDateChanged, isCustomsChanged, isStatusChanged, diffStr, exEtd, exEta, note } = checkJobDiff(
+      {
+        etdIso,
+        etaIso,
+        clearIso,
+        declarationNo,
+        customsStatus: customsSt,
+        status: parsedStatus,
+        hasExplicitStatus,
+        csName: val(idxCs),
+        customer,
+        bl: val(idxMbl) || val(idxHbl),
+      },
       match
     );
 
@@ -737,17 +911,16 @@ function parseSheetRows(
       bl: val(idxMbl) || val(idxHbl),
       commodity: val(idxCommodity),
       actionType,
-      isDateChanged: isChanged,
+      isChanged,
+      isDateChanged,
+      isCustomsChanged,
+      isStatusChanged,
       dateChangeDiff: diffStr,
       oldEtd: exEtd,
       oldEta: exEta,
       validationStatus:
         declarationNo || etdIso || etaIso || effectiveKey ? "valid" : "warning",
-      validationNote: match
-        ? isChanged
-          ? `🔄 อัปเดตกำหนดการ: ${diffStr} (อัปเดตทับงานเดิม ไม่เพิ่มแถว)`
-          : "⚪ งานเดิมในระบบแล้ว (วันเวลาไม่เปลี่ยน • ข้ามเพื่อไม่ให้งานบวม)"
-        : "✨ งานใหม่",
+      validationNote: match ? note : "✨ งานใหม่",
     });
   }
 

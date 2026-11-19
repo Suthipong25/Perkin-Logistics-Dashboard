@@ -919,7 +919,7 @@ export function StagingUploadView({
       const existingIdx = jobIndexMap.get(stgKey) ?? (stgJoin ? jobIndexMap.get(stgJoin) : undefined);
 
       if (existingIdx !== undefined) {
-        if (stg.isDateChanged || stg.isCustomsChanged || stg.isStatusChanged) {
+        if (stg.isDateChanged || stg.isCustomsChanged || stg.isStatusChanged || (stg as any).isChanged) {
           const target = { ...updatedJobsList[existingIdx] };
           if (stg.etd) target.etd = stg.etd;
           if (stg.eta) target.eta = stg.eta;
@@ -929,7 +929,17 @@ export function StagingUploadView({
           if (stg.feeder) target.feeder = stg.feeder;
           if (stg.flightNo) target.flightNo = stg.flightNo;
           if (stg.carrier && !target.carrier) target.carrier = stg.carrier;
-          if (stg.bl && !target.bl) target.bl = stg.bl;
+          if (stg.bl && (!target.bl || target.bl === "—")) target.bl = stg.bl;
+          if (stg.csName && (!target.csName || target.csName === "—")) target.csName = stg.csName;
+          if (stg.customer && stg.customer !== "—" && (!target.customer || target.customer === "—" || target.customer === "ลูกค้าใหม่")) {
+            target.customer = stg.customer;
+          }
+          if (stg.commodity && !target.commodity) target.commodity = stg.commodity;
+          if (stg.containerType && !target.containerType) target.containerType = stg.containerType;
+          if (stg.grossWeight && !target.grossWeight) target.grossWeight = stg.grossWeight;
+          if (stg.cbm && !target.cbm) target.cbm = stg.cbm;
+          if (stg.invoiceNo && !target.invoiceNo) target.invoiceNo = stg.invoiceNo;
+
           if (stg.isStatusChanged && stg.hasExplicitStatus && stg.status) {
             target.status = stg.status as JobRecord["status"];
             if (stg.statusDetail) target.statusDetail = stg.statusDetail;
@@ -942,13 +952,15 @@ export function StagingUploadView({
               target.nextAction = "นำส่งสินค้าเรียบร้อย";
             }
           }
-          if (stg.fileType === "customs") {
-            if (stg.declarationNo) {
-              target.declarationNo = stg.declarationNo;
-              target.customsFiled = true;
-            }
-            if (stg.submitDate) target.customsDate = stg.submitDate;
+
+          const isInvalidDecl = (d?: string | null) =>
+            !d || ["-", "—", "N/A", "NONE", "NULL", "NORMAL", "GENERAL", "IMPORT", "EXPORT", "TRANSIT", "RE-EXPORT"].includes(String(d).trim().toUpperCase());
+          if (!isInvalidDecl(stg.declarationNo)) {
+            target.declarationNo = String(stg.declarationNo).trim();
+            target.customsFiled = true;
+            if (!target.customsDate) target.customsDate = stg.submitDate || stg.clearDate || null;
           }
+
           if (stg.customsStatus && customsRank(stg.customsStatus) > customsRank(target.customsStatus)) {
             target.customsStatus = stg.customsStatus;
             if (stg.customsStatus === "0409") {
@@ -957,6 +969,8 @@ export function StagingUploadView({
               target.nextAction = "นำส่งสินค้าเรียบร้อย";
               target.cleared = true;
               target.doReleased = true;
+              target.draftCustoms = true;
+              target.customsFiled = true;
             }
           }
           if (stg.isDateChanged) {

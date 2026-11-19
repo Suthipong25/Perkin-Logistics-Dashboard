@@ -29,7 +29,7 @@ import {
   upsertJobsToPostgres,
   upsertTransportToPostgres,
 } from "@/lib/db";
-import { parseUploadedExcelBuffer } from "@/lib/excel-parser";
+import { parseUploadedExcelBuffer, stripModeSuffix } from "@/lib/excel-parser";
 import { JobRecord, TransportRecord } from "@/types/dashboard";
 
 const execFileAsync = promisify(execFile);
@@ -61,6 +61,73 @@ async function getCurrentTransport(): Promise<TransportRecord[]> {
   const pgTransport = await fetchTransportFromPostgres();
   if (pgTransport && pgTransport.length > 0) return pgTransport;
   return getTransport();
+}
+
+/**
+ * รวมข้อมูลงานระหว่างหลายไฟล์แบบแม่นยำสูง (Multi-File Intelligent Merge)
+ * ป้องกันไฟล์ FWD เขียนทับข้อมูลใบขนของ Customs หรือสถานะเสร็จสิ้น
+ */
+function mergeStagingJobRows(prev: any, incoming: any) {
+  const merged = { ...prev };
+
+  // 1. เลขที่ใบขน: คงเลขที่ใบขนที่ถูกต้องเสมอ (ไม่ทับด้วยค่าว่างหรือคำว่า NORMAL)
+  const isInvalidDecl = (d?: string | null) =>
+    !d || ["-", "—", "N/A", "NONE", "NULL", "NORMAL", "GENERAL", "IMPORT", "EXPORT", "TRANSIT", "RE-EXPORT"].includes(String(d).trim().toUpperCase());
+  if (!isInvalidDecl(incoming.declarationNo)) {
+    merged.declarationNo = String(incoming.declarationNo).trim();
+  }
+
+  // 2. สถานะใบขน: ขยับไปข้างหน้าเท่านั้น (0109 -> 0209 -> 0309 -> 0409) ไม่ลดระดับ
+  const rank = (s?: string | null) => ["0109", "0209", "0309", "0409"].indexOf(s || "");
+  if (rank(incoming.customsStatus) > rank(merged.customsStatus)) {
+    merged.customsStatus = incoming.customsStatus;
+  }
+
+  // 3. สถานะงาน: สถานะ Completed / Job Complete ต้องไม่ถูกลดระดับกลับเป็น Job Booking
+  if (incoming.status === "Completed" || incoming.statusDetail === "Job Complete" || merged.customsStatus === "0409") {
+    merged.status = "Completed";
+    merged.statusDetail = "Job Complete";
+    merged.hasExplicitStatus = true;
+  } else if (merged.status !== "Completed" && incoming.hasExplicitStatus && incoming.status) {
+    merged.status = incoming.status;
+    merged.statusDetail = incoming.statusDetail || merged.statusDetail;
+    merged.hasExplicitStatus = true;
+  }
+
+  // 4. ข้อมูลสายเรือ/เที่ยวบิน/ตู้สินค้า: เสริมข้อมูลที่ขาดหาย
+  if (incoming.vessel) merged.vessel = incoming.vessel;
+  if (incoming.feeder) merged.feeder = incoming.feeder;
+  if (incoming.carrier && !merged.carrier) merged.carrier = incoming.carrier;
+  if (incoming.flightNo || incoming.flight) merged.flightNo = incoming.flightNo || incoming.flight;
+  if (incoming.flightTime && incoming.flightTime !== "00:00") merged.flightTime = incoming.flightTime;
+  if (incoming.linerBooking && !merged.linerBooking) merged.linerBooking = incoming.linerBooking;
+  if (incoming.bl && !merged.bl) merged.bl = incoming.bl;
+  if (incoming.commodity && !merged.commodity) merged.commodity = incoming.commodity;
+  if (incoming.containerType && !merged.containerType) merged.containerType = incoming.containerType;
+  if (incoming.grossWeight && !merged.grossWeight) merged.grossWeight = incoming.grossWeight;
+  if (incoming.cbm && !merged.cbm) merged.cbm = incoming.cbm;
+  if (incoming.csName && !merged.csName) merged.csName = incoming.csName;
+  if (incoming.customer && incoming.customer !== "—" && incoming.customer !== "ลูกค้าใหม่" && (!merged.customer || merged.customer === "—")) {
+    merged.customer = incoming.customer;
+  }
+
+  // 5. กำหนดการวันเวลา
+  if (incoming.clearDate) merged.clearDate = incoming.clearDate;
+  if (incoming.submitDate) merged.submitDate = incoming.submitDate;
+  if (incoming.etd) merged.etd = incoming.etd;
+  if (incoming.eta) merged.eta = incoming.eta;
+
+  // 6. รวมสถานะการเปลี่ยนแปลง
+  merged.isDateChanged = Boolean(merged.isDateChanged || incoming.isDateChanged);
+  merged.isCustomsChanged = Boolean(merged.isCustomsChanged || incoming.isCustomsChanged);
+  merged.isStatusChanged = Boolean(merged.isStatusChanged || incoming.isStatusChanged);
+
+  const diffSet = new Set<string>();
+  if (merged.dateChangeDiff) merged.dateChangeDiff.split(" • ").forEach((d: string) => diffSet.add(d.trim()));
+  if (incoming.dateChangeDiff) incoming.dateChangeDiff.split(" • ").forEach((d: string) => diffSet.add(d.trim()));
+  merged.dateChangeDiff = Array.from(diffSet).filter(Boolean).join(" • ");
+
+  return merged;
 }
 
 export async function POST(req: NextRequest) {
@@ -568,15 +635,21 @@ export async function POST(req: NextRequest) {
 
             const isActionable =
               isGenuineNew ||
-              (exists && (Boolean(r.isDateChanged) || Boolean(r.isStatusChanged) || Boolean(r.isCustomsChanged)));
+              (exists && (Boolean(r.isDateChanged) || Boolean(r.isStatusChanged) || Boolean(r.isCustomsChanged) || Boolean(r.isChanged)));
             if (isActionable) actionableJobs++;
 
-            combinedJobsMap.set(key, {
+            const currentStg = {
               ...r,
               isPastOrOld,
               isBlankDummy,
               isGenuineNew,
-            });
+            };
+
+            if (combinedJobsMap.has(key)) {
+              combinedJobsMap.set(key, mergeStagingJobRows(combinedJobsMap.get(key), currentStg));
+            } else {
+              combinedJobsMap.set(key, currentStg);
+            }
           }
 
           fileResults.push({
@@ -590,6 +663,17 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // ตรวจสอบความเชื่อมโยงเที่ยวรถขนส่งกับ Job ขนส่งหลักอีกครั้งแบบ Order-Independent
+      combinedTripsMap.forEach((trip) => {
+        const linkedJobClean = stripModeSuffix(String(trip.jobNo || ""));
+        if (linkedJobClean && (existingJobMap.has(linkedJobClean) || combinedJobsMap.has(linkedJobClean))) {
+          trip.hasLinkedJob = true;
+          if (trip.validationNote.includes("ขนส่งทั่วไป")) {
+            trip.validationNote = `เที่ยวรถใหม่ • ผูกกับ Job ${linkedJobClean}`;
+          }
+        }
+      });
+
       const allTransportTrips = Array.from(combinedTripsMap.values());
       const allJobRows = Array.from(combinedJobsMap.values());
 
@@ -597,7 +681,7 @@ export async function POST(req: NextRequest) {
       if (autoApply) {
         const actionableJobsToApply: JobRecord[] = [];
         for (const stg of allJobRows) {
-          if (stg.actionType === "update" && (stg.isDateChanged || stg.isStatusChanged || stg.isCustomsChanged)) {
+          if (stg.actionType === "update" && (stg.isDateChanged || stg.isStatusChanged || stg.isCustomsChanged || stg.isChanged)) {
             const existing = existingJobMap.get(stg.jobNo.toUpperCase());
             if (existing) {
               const updated = { ...existing };
@@ -606,28 +690,64 @@ export async function POST(req: NextRequest) {
               if (stg.clearDate) updated.clearDate = stg.clearDate;
               if (stg.flightTime) updated.flightTime = stg.flightTime;
               if (stg.vessel) updated.vessel = stg.vessel;
-              if (stg.bl && !updated.bl) updated.bl = stg.bl;
+              if (stg.feeder) updated.feeder = stg.feeder;
+              if (stg.flightNo || stg.flight) (updated as any).flightNo = stg.flightNo || stg.flight;
+              if (stg.carrier && !updated.carrier) updated.carrier = stg.carrier;
+              if (stg.bl && (!updated.bl || updated.bl === "—")) updated.bl = stg.bl;
+              if (stg.csName && (!updated.csName || updated.csName === "—")) updated.csName = stg.csName;
+              if (stg.customer && stg.customer !== "—" && (!updated.customer || updated.customer === "—" || updated.customer === "ลูกค้าใหม่")) {
+                updated.customer = stg.customer;
+              }
+              if (stg.commodity && !updated.commodity) updated.commodity = stg.commodity;
+              if (stg.containerType && !updated.containerType) updated.containerType = stg.containerType;
+              if (stg.grossWeight && !updated.grossWeight) updated.grossWeight = stg.grossWeight;
+              if (stg.cbm && !updated.cbm) updated.cbm = stg.cbm;
+
               if (stg.isStatusChanged && stg.hasExplicitStatus && stg.status) {
                 updated.status = stg.status;
                 if (stg.statusDetail) updated.statusDetail = stg.statusDetail;
                 if (stg.statusRaw) updated.statusRaw = stg.statusRaw;
               }
-              if (stg.declarationNo) updated.declarationNo = stg.declarationNo;
+              if (stg.customsStatus) {
+                updated.customsStatus = stg.customsStatus;
+                if (stg.customsStatus === "0409") {
+                  updated.cleared = true;
+                  updated.doReleased = true;
+                  updated.status = "Completed";
+                  updated.statusDetail = "Job Complete";
+                  updated.nextAction = "นำส่งสินค้าเรียบร้อย";
+                }
+              }
+              if (stg.declarationNo) {
+                updated.declarationNo = stg.declarationNo;
+                updated.customsFiled = true;
+                if (!updated.customsDate) updated.customsDate = stg.submitDate || stg.clearDate || null;
+              }
               actionableJobsToApply.push(updated);
             }
           } else if (stg.isGenuineNew && stg.actionType === "new") {
             const isExp = /^(SH)?(SE|AE)/i.test(stg.jobNo);
+            const isAir = /^(SH)?(AE|AI)/i.test(stg.jobNo);
+            const isTrans = /^(SH)?(TS|SHT)/i.test(stg.jobNo);
+            const svc = isTrans
+              ? "Transport"
+              : isAir
+              ? (isExp ? "AIR Export" : "AIR Import")
+              : (isExp ? "SEA Export" : "SEA Import");
+
             const finalDate = isExp ? stg.etd || stg.eta : stg.eta || stg.etd;
             const opMonth = finalDate ? finalDate.slice(0, 7) : "2026-11";
+            const isDone = stg.status === "Completed" || stg.customsStatus === "0409";
+
             actionableJobsToApply.push({
               id: `Upload_${opMonth}_${stg.jobNo}`,
               jobNo: stg.jobNo,
               joinNo: stg.joinNo || undefined,
-              service: isExp ? "SEA Export" : "SEA Import",
-              serviceLabel: isExp ? "SEA Export" : "SEA Import",
-              status: stg.status || "In Progress",
-              statusDetail: stg.statusDetail || "Job Control",
-              statusRaw: stg.statusRaw || "Job Control",
+              service: svc,
+              serviceLabel: svc,
+              status: isDone ? "Completed" : stg.status || "In Progress",
+              statusDetail: isDone ? "Job Complete" : stg.statusDetail || "Job Control",
+              statusRaw: stg.statusRaw || (isDone ? "Job Complete" : "Job Control"),
               customer: stg.customer || "—",
               consignee: "",
               bl: stg.bl || "",
@@ -640,13 +760,13 @@ export async function POST(req: NextRequest) {
               ageDays: null,
               flags: [],
               jobDate: finalDate || null,
-              draftCustoms: false,
-              customsFiled: Boolean(stg.declarationNo),
-              doReleased: false,
-              cleared: false,
+              draftCustoms: isDone,
+              customsFiled: isDone || Boolean(stg.declarationNo),
+              doReleased: isDone,
+              cleared: isDone,
               advanceDoc: false,
               draftDate: null,
-              customsDate: null,
+              customsDate: stg.submitDate || null,
               doDate: null,
               clearDate: stg.clearDate || null,
               advanceDate: null,
@@ -657,13 +777,13 @@ export async function POST(req: NextRequest) {
               grossWeight: stg.grossWeight ?? undefined,
               cbm: stg.cbm ?? undefined,
               commodity: stg.commodity || undefined,
-              nextAction: "ตรวจปล่อยสินค้า",
+              nextAction: isDone ? "นำส่งสินค้าเรียบร้อย" : "ตรวจปล่อยสินค้า",
             });
           }
         }
 
         const actionableTripsToApply = allTransportTrips.filter(
-          (t) => t.isNew || t.isDateChanged || t.isDriverChanged
+          (t) => t.isNew || t.isDateChanged || t.isDriverChanged || (t as any).isPlateChanged
         );
 
         if (actionableJobsToApply.length > 0) {
