@@ -101,22 +101,34 @@ export default function OverviewView({
       if (isOpen(job) && age !== null && age > 0) overdue += 1;
     }
 
-    // 1.3 จำแนกสถานะงานสำหรับตาราง Matrix (Completed, Control, Waiting)
-    const classifyJob = (job: JobRecord): "Completed" | "Control" | "Waiting" => {
+    // 1.3 จำแนกสถานะงานสำหรับตาราง Matrix & Service Breakdown ตามลำดับ FWD System
+    // Flow: Job Booking Request > Job Control > Job Waiting > Job Complete
+    const classifyJob = (
+      job: JobRecord
+    ): "Booking" | "Control" | "Waiting" | "Completed" | "Cancelled" => {
       const st = job.status || "";
-      const std = (job.statusDetail || "").toLowerCase();
-      const raw = (job.statusRaw || "").toLowerCase();
-      if (st === "Completed" || std.includes("complete") || raw.includes("complete")) {
+      const std = job.statusDetail || "";
+      const raw = job.statusRaw || "";
+      if (st === "Completed" || std.includes("Complete") || raw.includes("Complete")) {
         return "Completed";
+      }
+      if (st === "Cancelled" || std.includes("Cancel") || raw.includes("Cancel")) {
+        return "Cancelled";
       }
       if (
         st === "Booking" ||
-        std.includes("wait") ||
-        std.includes("booking") ||
-        std.includes("draft") ||
-        raw.includes("wait") ||
-        raw.includes("booking") ||
-        raw.includes("draft")
+        std.includes("Booking") ||
+        std.includes("Request") ||
+        raw.includes("Booking") ||
+        raw.includes("Request")
+      ) {
+        return "Booking";
+      }
+      if (
+        std.includes("Wait") ||
+        std === "Job Waiting" ||
+        raw.includes("Wait") ||
+        raw === "Job Waiting"
       ) {
         return "Waiting";
       }
@@ -137,24 +149,27 @@ export default function OverviewView({
       const list = targetJobs.filter(
         (j) => (j.service || "").toUpperCase() === def.key.toUpperCase()
       );
-      const completed = list.filter((j) => classifyJob(j) === "Completed").length;
+      const booking = list.filter((j) => classifyJob(j) === "Booking").length;
       const control = list.filter((j) => classifyJob(j) === "Control").length;
       const waiting = list.filter((j) => classifyJob(j) === "Waiting").length;
+      const completed = list.filter((j) => classifyJob(j) === "Completed").length;
       return {
         ...def,
         total: list.length,
-        completed,
+        booking,
         control,
         waiting,
+        completed,
         cancelled: list.filter((j) => j.status === "Cancelled").length,
       };
     });
 
     const matrixTotals = {
       total: matrixRows.reduce((acc, r) => acc + r.total, 0),
-      completed: matrixRows.reduce((acc, r) => acc + r.completed, 0),
+      booking: matrixRows.reduce((acc, r) => acc + r.booking, 0),
       control: matrixRows.reduce((acc, r) => acc + r.control, 0),
       waiting: matrixRows.reduce((acc, r) => acc + r.waiting, 0),
+      completed: matrixRows.reduce((acc, r) => acc + r.completed, 0),
     };
 
     const services = matrixRows;
@@ -205,9 +220,9 @@ export default function OverviewView({
     const completed = byStatus.Completed || 0;
     const open = (byStatus["In Progress"] || 0) + (byStatus.Booking || 0);
 
-    const controlCount = (byDetail["Job Control"] || 0) + (byDetail.Control || 0);
-    const waitingCount =
-      (byDetail["Job Waiting"] || 0) + (byDetail["Job Booking"] || 0) + (byDetail.Waiting || 0);
+    const bookingCount = matrixTotals.booking;
+    const controlCount = matrixTotals.control;
+    const waitingCount = matrixTotals.waiting;
 
     return {
       total,
@@ -224,6 +239,7 @@ export default function OverviewView({
       customers: customers.size,
       byStatus,
       byDetail,
+      bookingCount,
       controlCount,
       waitingCount,
       services,

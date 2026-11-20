@@ -9,12 +9,12 @@ export interface MatrixRow {
   code: string;
   color: string;
   total: number;
-  completed: number;
+  booking: number;
   control: number;
   waiting: number;
-  inProgress?: number;
-  booking?: number;
+  completed: number;
   cancelled?: number;
+  inProgress?: number;
 }
 
 interface ServiceBreakdownProps {
@@ -22,9 +22,10 @@ interface ServiceBreakdownProps {
   stats: {
     matrixTotals: {
       total: number;
-      completed: number;
+      booking: number;
       control: number;
       waiting: number;
+      completed: number;
     };
     matrixRows: MatrixRow[];
     services: MatrixRow[];
@@ -105,14 +106,17 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
                 <th scope="col" className="py-2.5 px-3 text-right font-bold text-[#102238]">
                   Total
                 </th>
-                <th scope="col" className="py-2.5 px-3 text-right font-bold text-[#0d7a5f]">
-                  Completed
+                <th scope="col" className="py-2.5 px-3 text-right font-bold text-[#6d28d9]">
+                  Booking Request
                 </th>
-                <th scope="col" className="py-2.5 px-3 text-right font-bold text-[#db5610]">
-                  Control
+                <th scope="col" className="py-2.5 px-3 text-right font-bold text-[#0284c7]">
+                  Job Control
                 </th>
-                <th scope="col" className="py-2.5 px-4 text-right font-bold text-[#073766]">
-                  Waiting
+                <th scope="col" className="py-2.5 px-3 text-right font-bold text-[#c2410c]">
+                  Job Waiting
+                </th>
+                <th scope="col" className="py-2.5 px-4 text-right font-bold text-[#0d7a5f]">
+                  Job Complete
                 </th>
               </tr>
             </thead>
@@ -142,30 +146,47 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
                     </span>
                   </td>
                   <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                    <span className="inline-block min-w-[38px] text-center px-2 py-0.5 rounded-md font-bold text-[13px] font-mono tabular-nums bg-[#e6f5f0] text-[#0d7a5f] border border-[#bbf0df]">
-                      {fmtNum(row.completed)}
+                    <span
+                      className={`inline-block min-w-[38px] text-center px-2 py-0.5 rounded-md font-bold text-[13px] font-mono tabular-nums ${
+                        row.booking > 0
+                          ? "bg-[#ede9fe] text-[#6d28d9] border border-[#ddd6fe]"
+                          : "text-[#94a3b8]"
+                      }`}
+                    >
+                      {fmtNum(row.booking)}
                     </span>
                   </td>
                   <td className="py-2.5 px-3 text-right whitespace-nowrap">
                     <span
                       className={`inline-block min-w-[38px] text-center px-2 py-0.5 rounded-md font-bold text-[13px] font-mono tabular-nums ${
                         row.control > 0
-                          ? "bg-[#fff1e8] text-[#db5610] border border-[#fed7aa]"
+                          ? "bg-[#e0f2fe] text-[#0369a1] border border-[#bae6fd]"
                           : "text-[#94a3b8]"
                       }`}
                     >
                       {fmtNum(row.control)}
                     </span>
                   </td>
-                  <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
                     <span
                       className={`inline-block min-w-[38px] text-center px-2 py-0.5 rounded-md font-bold text-[13px] font-mono tabular-nums ${
                         row.waiting > 0
-                          ? "bg-[#eaf4fc] text-[#073766] border border-[#bfdbfe]"
+                          ? "bg-[#fff1e8] text-[#c2410c] border border-[#fed7aa]"
                           : "text-[#94a3b8]"
                       }`}
                     >
                       {fmtNum(row.waiting)}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                    <span
+                      className={`inline-block min-w-[38px] text-center px-2 py-0.5 rounded-md font-bold text-[13px] font-mono tabular-nums ${
+                        row.completed > 0
+                          ? "bg-[#e6f5f0] text-[#0d7a5f] border border-[#bbf0df]"
+                          : "text-[#94a3b8]"
+                      }`}
+                    >
+                      {fmtNum(row.completed)}
                     </span>
                   </td>
                 </tr>
@@ -179,14 +200,17 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
                 <td className="py-3 px-3 text-right text-[#102238] font-extrabold text-[16px] font-mono tabular-nums">
                   {fmtNum(stats.matrixTotals.total)}
                 </td>
-                <td className="py-3 px-3 text-right font-extrabold text-[14px] font-mono tabular-nums text-[#0d7a5f]">
-                  {fmtNum(stats.matrixTotals.completed)}
+                <td className="py-3 px-3 text-right font-extrabold text-[14px] font-mono tabular-nums text-[#6d28d9]">
+                  {fmtNum(stats.matrixTotals.booking)}
                 </td>
-                <td className="py-3 px-3 text-right font-extrabold text-[14px] font-mono tabular-nums text-[#db5610]">
+                <td className="py-3 px-3 text-right font-extrabold text-[14px] font-mono tabular-nums text-[#0284c7]">
                   {fmtNum(stats.matrixTotals.control)}
                 </td>
-                <td className="py-3 px-4 text-right font-extrabold text-[14px] font-mono tabular-nums text-[#073766]">
+                <td className="py-3 px-3 text-right font-extrabold text-[14px] font-mono tabular-nums text-[#c2410c]">
                   {fmtNum(stats.matrixTotals.waiting)}
+                </td>
+                <td className="py-3 px-4 text-right font-extrabold text-[14px] font-mono tabular-nums text-[#0d7a5f]">
+                  {fmtNum(stats.matrixTotals.completed)}
                 </td>
               </tr>
             </tfoot>
@@ -194,16 +218,20 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
 
           <div className="p-3 border-t border-[#dce2e8] bg-[#fafafa] flex flex-wrap items-center justify-between text-[11.5px] text-[#64748b]">
             <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#8b5cf6] inline-block" />
+              Booking: คำขอเปิดงาน/จองระวาง
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#0284c7] inline-block" />
+              Control: ควบคุม/ดำเนินงานขนส่ง
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#f56a22] inline-block" />
+              Waiting: รอเอกสาร/ตรวจปล่อย
+            </span>
+            <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#0d7a5f] inline-block" />
-              Completed: ส่งมอบ/ปิดงานแล้ว
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#db5610] inline-block" />
-              Control: อยู่ระหว่างดำเนินการ/วิ่งงาน
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#073766] inline-block" />
-              Waiting: รอเอกสาร/รอจองเรือ
+              Complete: จัดส่งสำเร็จ/ปิดงาน
             </span>
           </div>
         </div>
@@ -212,9 +240,6 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
         <div className="p-5 space-y-4 flex-1 flex flex-col justify-between">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-5">
             {stats.services.map((sv) => {
-              const inProgress = sv.inProgress ?? sv.control;
-              const booking = sv.booking ?? sv.waiting;
-
               return (
                 <div key={sv.key} className="space-y-1.5">
                   <div className="grid grid-cols-[136px_1fr_84px] items-center gap-3.5">
@@ -227,30 +252,43 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
                       </div>
                     </div>
 
+                    {/* Progress Bar เรียง: Booking Request -> Control -> Waiting -> Complete */}
                     <div className="h-3 rounded-full bg-[#eef2f6] flex overflow-hidden shadow-2xs">
+                      {/* 1. Job Booking Request */}
+                      <div
+                        style={{
+                          width: `${pct(sv.booking, sv.total)}%`,
+                          backgroundColor: "#8b5cf6",
+                        }}
+                        className="transition-[width] duration-500 ease-out"
+                        title={`Job Booking Request: ${sv.booking} งาน`}
+                      />
+                      {/* 2. Job Control */}
+                      <div
+                        style={{
+                          width: `${pct(sv.control, sv.total)}%`,
+                          backgroundColor: "#0284c7",
+                        }}
+                        className="transition-[width] duration-500 ease-out"
+                        title={`Job Control: ${sv.control} งาน`}
+                      />
+                      {/* 3. Job Waiting */}
+                      <div
+                        style={{
+                          width: `${pct(sv.waiting, sv.total)}%`,
+                          backgroundColor: "#f56a22",
+                        }}
+                        className="transition-[width] duration-500 ease-out"
+                        title={`Job Waiting: ${sv.waiting} งาน`}
+                      />
+                      {/* 4. Job Complete */}
                       <div
                         style={{
                           width: `${pct(sv.completed, sv.total)}%`,
                           backgroundColor: "#0d7a5f",
                         }}
                         className="transition-[width] duration-500 ease-out"
-                        title={`Completed: ${sv.completed} งาน`}
-                      />
-                      <div
-                        style={{
-                          width: `${pct(inProgress, sv.total)}%`,
-                          backgroundColor: "#f56a22",
-                        }}
-                        className="transition-[width] duration-500 ease-out"
-                        title={`Control: ${inProgress} งาน`}
-                      />
-                      <div
-                        style={{
-                          width: `${pct(booking, sv.total)}%`,
-                          backgroundColor: "#073766",
-                        }}
-                        className="transition-[width] duration-500 ease-out"
-                        title={`Waiting: ${booking} งาน`}
+                        title={`Job Complete: ${sv.completed} งาน`}
                       />
                     </div>
 
@@ -262,15 +300,35 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between text-[11.5px] text-[#6e7e91] pl-[148px] pr-1">
-                    <span className="text-[#0d7a5f] font-medium">
-                      ✓ {fmtNum(sv.completed)} ปิดงาน
+                  {/* Sub-labels เรียง: Booking -> Control -> Waiting -> Complete */}
+                  <div className="flex items-center justify-between text-[11px] font-medium pl-[148px] pr-1">
+                    <span
+                      className="text-[#6d28d9] inline-flex items-center gap-1"
+                      title={`Job Booking Request: ${sv.booking} งาน`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6]" />
+                      {fmtNum(sv.booking)} Booking
                     </span>
-                    <span className="text-[#db5610] font-medium">
-                      ⚡ {fmtNum(inProgress)} ดำเนินการ
+                    <span
+                      className="text-[#0284c7] inline-flex items-center gap-1"
+                      title={`Job Control: ${sv.control} งาน`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
+                      {fmtNum(sv.control)} Control
                     </span>
-                    <span className="text-[#073766] font-medium">
-                      ⏳ {fmtNum(booking)} รอเอกสาร
+                    <span
+                      className="text-[#c2410c] inline-flex items-center gap-1"
+                      title={`Job Waiting: ${sv.waiting} งาน`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#f56a22]" />
+                      {fmtNum(sv.waiting)} Waiting
+                    </span>
+                    <span
+                      className="text-[#0d7a5f] inline-flex items-center gap-1"
+                      title={`Job Complete: ${sv.completed} งาน`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0d7a5f]" />
+                      {fmtNum(sv.completed)} Complete
                     </span>
                   </div>
                 </div>
@@ -279,22 +337,29 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
           </div>
 
           <div className="pt-3 border-t border-[#dce2e8] flex flex-wrap items-center justify-between text-xs text-[#526275]">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
               <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#0d7a5f]" />
-                <span>เสร็จสิ้น (Completed)</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#8b5cf6]" />
+                <span className="font-semibold text-[#6d28d9]">Job Booking Request</span>
               </span>
+              <span className="text-slate-300 select-none font-bold">&gt;</span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#0284c7]" />
+                <span className="font-semibold text-[#0284c7]">Job Control</span>
+              </span>
+              <span className="text-slate-300 select-none font-bold">&gt;</span>
               <span className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#f56a22]" />
-                <span>กำลังดำเนินการ (Control)</span>
+                <span className="font-semibold text-[#c2410c]">Job Waiting</span>
               </span>
+              <span className="text-slate-300 select-none font-bold">&gt;</span>
               <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#073766]" />
-                <span>รอเอกสาร / จองเรือ (Waiting)</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#0d7a5f]" />
+                <span className="font-semibold text-[#0d7a5f]">Job Complete</span>
               </span>
             </div>
             <span className="text-[11px] text-[#6e7e91]">
-              ข้อมูลนับตามแถวรายงาน Booking Report ประจำปี 2026
+              ลำดับสถานะตามกระบวนการ FWD System
             </span>
           </div>
         </div>

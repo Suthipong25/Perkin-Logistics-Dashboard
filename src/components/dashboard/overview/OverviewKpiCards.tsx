@@ -10,6 +10,7 @@ interface OverviewKpiCardsProps {
     transportCount: number;
     completed: number;
     open: number;
+    bookingCount?: number;
     controlCount: number;
     waitingCount: number;
     overdue: number;
@@ -114,11 +115,16 @@ export function OverviewKpiCards({ stats, onNavigateJobs }: OverviewKpiCardsProp
             {fmtNum(stats.open)}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <span className="px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200/80 text-amber-800 text-[11px] font-semibold">
-              Job Control: {stats.controlCount}
-            </span>
+            {stats.bookingCount !== undefined && stats.bookingCount > 0 && (
+              <span className="px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200/80 text-purple-800 text-[11px] font-semibold">
+                Booking: {stats.bookingCount}
+              </span>
+            )}
             <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200/80 text-blue-800 text-[11px] font-semibold">
-              รอเอกสาร: {stats.waitingCount}
+              Control: {stats.controlCount}
+            </span>
+            <span className="px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200/80 text-amber-800 text-[11px] font-semibold">
+              Waiting: {stats.waitingCount}
             </span>
           </div>
         </div>
