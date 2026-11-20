@@ -7,8 +7,7 @@
 [![Database](https://img.shields.io/badge/PostgreSQL-Supabase%20Cloud-blue)](https://supabase.com/)
 [![License](https://img.shields.io/badge/License-Proprietary-red)]()
 
-🌐 **ระบบ Production ออนไลน์พร้อมใช้งาน:**  
-👉 **[https://perkin-logistics-dashboard-suthipongs-projects-2d06d15d.vercel.app/](https://perkin-logistics-dashboard-suthipongs-projects-2d06d15d.vercel.app/)**
+
 
 ---
 
