@@ -576,7 +576,7 @@ export default function JobDrawer({
                     {
                       done: selectedJob.status !== "Booking",
                       date: selectedJob.etd,
-                      name: "2. Job Control (ควบคุมงานขนส่ง / กำหนดออกเดินทาง ETD)",
+                      name: "2. Job Control (กำลังดำเนินการ)",
                     },
                     {
                       done:
@@ -587,7 +587,7 @@ export default function JobDrawer({
                             new Date(selectedJob.eta) <= new Date()
                         ),
                       date: selectedJob.eta,
-                      name: "3. Job Waiting (รอเอกสาร / สินค้าถึงปลายทาง ETA)",
+                      name: "3. Job Waiting (รอเอกสารปล่อยสินค้า / ตรวจปล่อย รอเตรียมเอกสารวางบิล)",
                     },
                     {
                       done: selectedJob.status === "Completed",

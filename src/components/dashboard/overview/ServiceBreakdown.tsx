@@ -223,11 +223,11 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#0284c7] inline-block" />
-              Control: ควบคุม/ดำเนินงานขนส่ง
+              Control: กำลังดำเนินการ
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#f56a22] inline-block" />
-              Waiting: รอเอกสาร/ตรวจปล่อย
+              Waiting: รอเอกสารปล่อยสินค้า / ตรวจปล่อย รอเตรียมเอกสารวางบิล
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#0d7a5f] inline-block" />

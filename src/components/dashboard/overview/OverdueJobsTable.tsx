@@ -17,9 +17,9 @@ function getInferredCause(j: JobRecord): string {
     return "รอยืนยันบุ๊คกิ้ง / จองระวาง";
   }
   if (s.includes("wait")) {
-    return "รอเอกสารปล่อยสินค้า / ตรวจปล่อย";
+    return "รอเอกสารปล่อยสินค้า / ตรวจปล่อย รอเตรียมเอกสารวางบิล";
   }
-  return "อยู่ระหว่างขนส่ง / ข้ามกำหนดนัด";
+  return "กำลังดำเนินการ";
 }
 
 interface OverdueJobsTableProps {

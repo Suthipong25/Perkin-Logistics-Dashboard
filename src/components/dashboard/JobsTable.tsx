@@ -70,7 +70,7 @@ const FWD_STATUS_STEPS = [
   {
     code: "Control",
     name: "Job Control",
-    desc: "งานที่อยู่ระหว่างควบคุมและดำเนินงานขนส่ง",
+    desc: "กำลังดำเนินการ",
     activeBg: "bg-[#0284c7] border-[#0284c7] text-white",
     inactiveBorder: "border-[#0284c7]/30 text-[#0369a1] hover:bg-[#f0f9ff]",
     badgeInactive: "bg-[#e0f2fe] text-[#0369a1]",
@@ -79,7 +79,7 @@ const FWD_STATUS_STEPS = [
   {
     code: "Waiting",
     name: "Job Waiting",
-    desc: "งานที่อยู่ระหว่างรอเอกสารหรือรอตรวจปล่อย",
+    desc: "รอเอกสารปล่อยสินค้า / ตรวจปล่อย รอเตรียมเอกสารวางบิล",
     activeBg: "bg-[#f56a22] border-[#f56a22] text-white",
     inactiveBorder: "border-[#f56a22]/30 text-[#c2410c] hover:bg-[#fff7ed]",
     badgeInactive: "bg-[#fff1e8] text-[#c2410c]",
