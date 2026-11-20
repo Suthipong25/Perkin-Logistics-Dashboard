@@ -157,21 +157,10 @@ export async function PATCH(
     }
   }
 
-  // 3. ตรวจเลข version (Optimistic Concurrency Control -> 409 Conflict)
+  // 3. จัดการเลข version (Last-Write-Wins: อนุญาตให้ผู้ใช้ทุกคนบันทึกได้ทันทีเสมอ ไม่บล็อกด้วย 409 Conflict)
   const currentVersion = (currentJob as { version?: number }).version || 1;
-  if (
-    body.expectedVersion !== undefined &&
-    Number(body.expectedVersion) !== currentVersion
-  ) {
-    return NextResponse.json(
-      {
-        error:
-          "ข้อมูลงานนี้ถูกแก้ไขโดยผู้ใช้อื่นก่อนหน้า กรุณารีเฟรชข้อมูลล่าสุดก่อนบันทึก (409 Conflict)",
-        currentVersion,
-      },
-      { status: 409 }
-    );
-  }
+  const nextVersion =
+    Math.max(currentVersion, Number(body.expectedVersion) || 1) + 1;
 
   // 4. สร้างรายการแก้ไขและส่ง Webhook ไปหา n8n (POST /webhook/job-edit-v031)
   const editId = crypto.randomUUID();
@@ -229,13 +218,13 @@ export async function PATCH(
   // 5. อัปเดตข้อมูลในระบบเว็บและเพิ่มเลข version + 1
   const updated = updateJobInMemory(jobNo, {
     ...sanitizedPatch,
-    version: currentVersion + 1,
+    version: nextVersion,
   });
 
   // 6. Direct sync to Supabase PostgreSQL (functions in Node.js serverless & local)
   await updateJobInPostgres(jobNo, {
     ...sanitizedPatch,
-    version: currentVersion + 1,
+    version: nextVersion,
   });
 
   return NextResponse.json({
@@ -245,5 +234,6 @@ export async function PATCH(
     syncedViaN8n,
     syncedToDb: true,
     job: updated,
+    version: nextVersion,
   });
 }

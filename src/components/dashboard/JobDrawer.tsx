@@ -70,7 +70,19 @@ export default function JobDrawer({
       setInlineEditingStatus(false);
       setEditing(false);
     }
-  }, [selectedJob?.jobNo]);
+  }, [selectedJob?.jobNo, selectedJob?.updateStatus]);
+
+  /* ปิดหน้าต่างเมื่อกดปุ่ม Escape (Esc) */
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        onClose();
+        setEditing(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   // หากไม่มีงานถูกเลือก ไม่ต้องเรนเดอร์อะไร
   if (!selectedJob) return null;
@@ -134,7 +146,7 @@ export default function JobDrawer({
       const returnedJob = resData.job || {
         ...selectedJob,
         ...patch,
-        version: (selectedJob.version || 1) + 1,
+        version: resData.version || (selectedJob.version || 1) + 1,
       };
       returnedJob.nextAction = computeNextAction(returnedJob);
       onJobUpdated(returnedJob);
@@ -171,7 +183,7 @@ export default function JobDrawer({
       const updated: JobRecord = resData.job || {
         ...selectedJob,
         updateStatus: statusTextDraft,
-        version: (selectedJob.version || 1) + 1,
+        version: resData.version || (selectedJob.version || 1) + 1,
       };
       onJobUpdated(updated);
       setInlineEditingStatus(false);
@@ -188,7 +200,15 @@ export default function JobDrawer({
    * 4. RENDER UI
    * ========================================================================== */
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[#071a2f]/40 backdrop-blur-[2px] animate-backdrop-in">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+          setEditing(false);
+        }
+      }}
+      className="fixed inset-0 z-50 flex justify-end bg-[#071a2f]/40 backdrop-blur-[2px] animate-backdrop-in"
+    >
       <aside
         role="dialog"
         aria-modal="true"
