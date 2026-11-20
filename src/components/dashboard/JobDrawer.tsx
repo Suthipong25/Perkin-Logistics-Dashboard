@@ -564,68 +564,37 @@ export default function JobDrawer({
               {/* 3. ไทม์ไลน์สถานะการดำเนินงาน (Shipment Milestones) */}
               <div>
                 <h3 className="text-[13px] font-bold uppercase tracking-wider text-[#526275] mb-3">
-                  {selectedJob.customsStatus
-                    ? "สถานะการดำเนินงาน 5 ขั้นตอน (Customs & Delivery Milestones)"
-                    : "สถานะการดำเนินงาน (FWD Shipment Milestones)"}
+                  สถานะการดำเนินงาน (FWD Shipment Milestones)
                 </h3>
                 <div className="space-y-3 border-l-2 border-[#dce2e8] ml-2.5 pl-4">
-                  {(selectedJob.customsStatus
-                    ? [
-                        {
-                          done: selectedJob.draftCustoms,
-                          date: selectedJob.draftDate,
-                          name: "1. ออก Draft ใบขนสินค้า (0109 / Reference No)",
-                        },
-                        {
-                          done: selectedJob.customsFiled,
-                          date: selectedJob.customsDate,
-                          name: "2. ยิงใบขนจริง (0209 / SUBMIT DD)",
-                        },
-                        {
-                          done: selectedJob.doReleased,
-                          date: selectedJob.doDate,
-                          name: "3. ชำระภาษี / ตัดบัญชี / แลก DO (0309)",
-                        },
-                        {
-                          done: selectedJob.cleared,
-                          date: selectedJob.clearDate,
-                          name: "4. ตรวจปล่อยออกจากอารักขา (0409 / Clear Date)",
-                        },
-                        {
-                          done: selectedJob.advanceDoc,
-                          date: selectedJob.advanceDate,
-                          name: "5. ส่งมอบและปิดชุดงาน (Job Complete)",
-                        },
-                      ]
-                    : [
-                        {
-                          done: true,
-                          date: selectedJob.jobDate,
-                          name: "1. Job Booking Request (คำขอเปิดงาน / จองระวาง)",
-                        },
-                        {
-                          done: selectedJob.status !== "Booking",
-                          date: selectedJob.etd,
-                          name: "2. Job Control (ควบคุมงานขนส่ง / กำหนดออกเดินทาง ETD)",
-                        },
-                        {
-                          done:
-                            selectedJob.status === "Completed" ||
-                            (selectedJob.statusDetail || "").includes("Wait") ||
-                            Boolean(
-                              selectedJob.eta &&
-                                new Date(selectedJob.eta) <= new Date()
-                            ),
-                          date: selectedJob.eta,
-                          name: "3. Job Waiting (รอเอกสาร / สินค้าถึงปลายทาง ETA)",
-                        },
-                        {
-                          done: selectedJob.status === "Completed",
-                          date: selectedJob.clearDate || selectedJob.eta || selectedJob.etd,
-                          name: "4. Job Complete (ปิดงานสมบูรณ์)",
-                        },
-                      ]
-                  ).map((step) => (
+                  {[
+                    {
+                      done: true,
+                      date: selectedJob.jobDate,
+                      name: "1. Job Booking Request (คำขอเปิดงาน / จองระวาง)",
+                    },
+                    {
+                      done: selectedJob.status !== "Booking",
+                      date: selectedJob.etd,
+                      name: "2. Job Control (ควบคุมงานขนส่ง / กำหนดออกเดินทาง ETD)",
+                    },
+                    {
+                      done:
+                        selectedJob.status === "Completed" ||
+                        (selectedJob.statusDetail || "").includes("Wait") ||
+                        Boolean(
+                          selectedJob.eta &&
+                            new Date(selectedJob.eta) <= new Date()
+                        ),
+                      date: selectedJob.eta,
+                      name: "3. Job Waiting (รอเอกสาร / สินค้าถึงปลายทาง ETA)",
+                    },
+                    {
+                      done: selectedJob.status === "Completed",
+                      date: selectedJob.clearDate || selectedJob.eta || selectedJob.etd,
+                      name: "4. Job Complete (ปิดงานสมบูรณ์)",
+                    },
+                  ].map((step) => (
                     <div key={step.name} className="relative">
                       <span
                         className={`w-3 h-3 rounded-full absolute -left-[23px] top-1.5 border-2 border-white ${
@@ -706,44 +675,20 @@ export default function JobDrawer({
                   />
                 </div>
                 <div>
-                  <label htmlFor="field-draftDate" className="block text-[12.5px] font-semibold text-[#526275] mb-1">
-                    วันที่ออก Draft ใบขน
+                  <label htmlFor="field-jobDate" className="block text-[12.5px] font-semibold text-[#526275] mb-1">
+                    วันที่เปิดงาน (Booking Date)
                   </label>
                   <input
-                    id="field-draftDate"
+                    id="field-jobDate"
                     type="date"
-                    name="draftDate"
-                    defaultValue={selectedJob.draftDate || ""}
-                    className="w-full h-10 px-3 rounded-[6px] border border-[#c5cfd9] num text-[13.5px]"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="field-customsDate" className="block text-[12.5px] font-semibold text-[#526275] mb-1">
-                    วันที่ยิงใบขนจริง
-                  </label>
-                  <input
-                    id="field-customsDate"
-                    type="date"
-                    name="customsDate"
-                    defaultValue={selectedJob.customsDate || ""}
-                    className="w-full h-10 px-3 rounded-[6px] border border-[#c5cfd9] num text-[13.5px]"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="field-doDate" className="block text-[12.5px] font-semibold text-[#526275] mb-1">
-                    วันที่แลก DO
-                  </label>
-                  <input
-                    id="field-doDate"
-                    type="date"
-                    name="doDate"
-                    defaultValue={selectedJob.doDate || ""}
+                    name="jobDate"
+                    defaultValue={selectedJob.jobDate || ""}
                     className="w-full h-10 px-3 rounded-[6px] border border-[#c5cfd9] num text-[13.5px]"
                   />
                 </div>
                 <div>
                   <label htmlFor="field-clearDate" className="block text-[12.5px] font-semibold text-[#526275] mb-1">
-                    วันที่ Clear &amp; Pickup
+                    วันที่ส่งมอบ / ปิดงาน (Delivery Date)
                   </label>
                   <input
                     id="field-clearDate"

@@ -8,9 +8,19 @@ import {
   fmtDate,
   fmtMonth,
   serviceMeta,
-  computeNextAction,
   daysOpen,
 } from "@/lib/dashboard-helpers";
+
+function getInferredCause(j: JobRecord): string {
+  const s = (j.statusDetail || j.status || "").toLowerCase();
+  if (s.includes("booking") || s.includes("request")) {
+    return "รอยืนยันบุ๊คกิ้ง / จองระวาง";
+  }
+  if (s.includes("wait")) {
+    return "รอเอกสารปล่อยสินค้า / ตรวจปล่อย";
+  }
+  return "อยู่ระหว่างขนส่ง / ข้ามกำหนดนัด";
+}
 
 interface OverdueJobsTableProps {
   monthFilter: string;
@@ -51,7 +61,7 @@ export function OverdueJobsTable({
                 รอบเดือน {fmtMonth(monthFilter)} ปิดงานครบ 100% แล้ว · แสดงงานค้างจากทั้งระบบ ({stats.allOverdueCount} งาน)
               </span>
             ) : (
-              `รายการงานสถานะ Control และ Waiting ที่ผ่านกำหนด ETD แล้ว (${stats.overdue} งาน)`
+              `รายการงานสถานะ Booking, Control และ Waiting ที่ผ่านกำหนด ETA/ETD แล้ว (${stats.overdue} งาน)`
             )}
           </p>
         </div>
@@ -83,9 +93,9 @@ export function OverdueJobsTable({
               <th className="py-3 px-3">บริการ</th>
               <th className="py-3 px-4">ลูกค้า (Customer)</th>
               <th className="py-3 px-3">กำหนดการ</th>
-              <th className="py-3 px-4">หมายเหตุ / สถานะล่าสุด (Update Status)</th>
+              <th className="py-3 px-4">สาเหตุ / สถานะติดตาม (Update Status)</th>
               <th className="py-3 px-3 text-right">เกินกำหนด</th>
-              <th className="py-3 px-4">ขั้นตอนถัดไป</th>
+              <th className="py-3 px-4 text-center">สถานะ FWD System</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#dce2e8] text-[13.5px]">
@@ -164,15 +174,20 @@ export function OverdueJobsTable({
                     </td>
                     <td
                       className="py-3 px-4 max-w-[240px] truncate text-xs text-[#526275]"
-                      title={j.updateStatus || j.remark || ""}
+                      title={
+                        j.updateStatus ||
+                        j.remark ||
+                        `สาเหตุอัตโนมัติ: ${getInferredCause(j)} (คลิกเพื่อระบุสาเหตุจริง)`
+                      }
                     >
                       {j.updateStatus || j.remark ? (
-                        <span className="text-[#102238]">
+                        <span className="text-[#102238] font-medium">
                           {j.updateStatus || j.remark}
                         </span>
                       ) : (
-                        <span className="text-slate-400 italic">
-                          (ไม่มีบันทึกสถานะล่าสุด)
+                        <span className="text-amber-800/80 italic inline-flex items-center gap-1 group-hover:text-[#f56a22]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                          {getInferredCause(j)}
                         </span>
                       )}
                     </td>
@@ -185,9 +200,26 @@ export function OverdueJobsTable({
                         <span className="text-slate-400 font-mono text-xs">—</span>
                       )}
                     </td>
-                    <td className="py-3 px-4 whitespace-nowrap text-xs">
-                      <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-medium">
-                        {computeNextAction(j) || "ติดตามสถานะ"}
+                    <td className="py-3 px-4 whitespace-nowrap text-xs text-center">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          (j.statusDetail || "").includes("Booking") || j.status === "Booking"
+                            ? "bg-[#ede9fe] text-[#6d28d9] border border-[#ddd6fe]"
+                            : (j.statusDetail || "").includes("Wait")
+                            ? "bg-[#fff1e8] text-[#c2410c] border border-[#fed7aa]"
+                            : "bg-[#e0f2fe] text-[#0369a1] border border-[#bae6fd]"
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            (j.statusDetail || "").includes("Booking") || j.status === "Booking"
+                              ? "bg-[#8b5cf6]"
+                              : (j.statusDetail || "").includes("Wait")
+                              ? "bg-[#f56a22]"
+                              : "bg-[#0284c7]"
+                          }`}
+                        />
+                        {j.statusDetail || j.status}
                       </span>
                     </td>
                   </tr>
