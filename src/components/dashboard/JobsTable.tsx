@@ -54,45 +54,54 @@ export interface JobsTableProps {
 }
 
 /* ============================================================================
- * E-CUSTOMS PIPELINE DEFINITIONS
- * ขั้นตอนพิธีการศุลกากร 4 ลำดับ
+ * FWD SYSTEM STATUS DEFINITIONS
+ * สถานะงานชิปเมนท์หลักตามระบบ FWD System
  * ============================================================================ */
-const PIPELINE_STEPS = [
+const FWD_STATUS_STEPS = [
   {
-    code: "0109",
-    name: "ร่างใบขน (0109)",
-    desc: "ดูงานที่เอกสารยังไม่ครบ ยังไม่ได้ยิงใบขน",
-    activeBg: "bg-[#f56a22] border-[#f56a22] text-white",
-    inactiveBorder: "border-[#f56a22]/30 text-[#8a3800] hover:bg-[#fff6f0]",
-    badgeInactive: "bg-[#fff1e8] text-[#db5610]",
-    dotColor: "bg-[#f56a22]",
+    code: "Booking",
+    name: "Job Booking Request",
+    desc: "งานที่อยู่ระหว่างคำขอเปิดงาน / จองระวางเรือ-เครื่องบิน",
+    activeBg: "bg-[#8b5cf6] border-[#8b5cf6] text-white",
+    inactiveBorder: "border-[#8b5cf6]/30 text-[#6d28d9] hover:bg-[#f5f3ff]",
+    badgeInactive: "bg-[#ede9fe] text-[#6d28d9]",
+    dotColor: "bg-[#8b5cf6]",
   },
   {
-    code: "0209",
-    name: "ยิงใบขนแล้ว (0209)",
-    desc: "ดูงานที่รอเจ้าหน้าที่ศุลกากรตรวจปล่อย",
+    code: "Control",
+    name: "Job Control",
+    desc: "งานที่อยู่ระหว่างควบคุมและดำเนินงานขนส่ง",
     activeBg: "bg-[#0284c7] border-[#0284c7] text-white",
     inactiveBorder: "border-[#0284c7]/30 text-[#0369a1] hover:bg-[#f0f9ff]",
     badgeInactive: "bg-[#e0f2fe] text-[#0369a1]",
     dotColor: "bg-[#0284c7]",
   },
   {
-    code: "0309",
-    name: "ชำระภาษีแล้ว (0309)",
-    desc: "งานพร้อมนำสินค้าออกจากท่า",
-    activeBg: "bg-[#6366f1] border-[#6366f1] text-white",
-    inactiveBorder: "border-[#6366f1]/30 text-[#4338ca] hover:bg-[#eef2ff]",
-    badgeInactive: "bg-[#e0e7ff] text-[#4338ca]",
-    dotColor: "bg-[#6366f1]",
+    code: "Waiting",
+    name: "Job Waiting",
+    desc: "งานที่อยู่ระหว่างรอเอกสารหรือรอตรวจปล่อย",
+    activeBg: "bg-[#f56a22] border-[#f56a22] text-white",
+    inactiveBorder: "border-[#f56a22]/30 text-[#c2410c] hover:bg-[#fff7ed]",
+    badgeInactive: "bg-[#fff1e8] text-[#c2410c]",
+    dotColor: "bg-[#f56a22]",
   },
   {
-    code: "0409",
-    name: "ตรวจปล่อยสมบูรณ์ (0409)",
-    desc: "งานที่พร้อมปิดชุดทำเบิกเงิน",
+    code: "Completed",
+    name: "Job Complete",
+    desc: "งานที่ปิดงานและจัดส่งสมบูรณ์เรียบร้อย",
     activeBg: "bg-[#0d7a5f] border-[#0d7a5f] text-white",
     inactiveBorder: "border-[#0d7a5f]/30 text-[#0d7a5f] hover:bg-[#e6f5f0]",
     badgeInactive: "bg-[#e6f5f0] text-[#0d7a5f]",
     dotColor: "bg-[#0d7a5f]",
+  },
+  {
+    code: "Cancelled",
+    name: "Job Cancelled",
+    desc: "งานที่ถูกยกเลิก",
+    activeBg: "bg-[#64748b] border-[#64748b] text-white",
+    inactiveBorder: "border-[#64748b]/30 text-[#475569] hover:bg-slate-100",
+    badgeInactive: "bg-slate-100 text-[#475569]",
+    dotColor: "bg-[#64748b]",
   },
 ];
 
@@ -123,10 +132,11 @@ export default function JobsTable({
   const pageSize = 25;
 
   /* ==========================================================================
-   * 1.1 CUSTOMS PIPELINE COUNTS (MEMOIZED)
-   * คำนวณจำนวนงานในแต่ละขั้นตอนพิธีการศุลกากรตามบริบทเดือนและบริการที่เลือก
+   * 1.1 FWD SYSTEM STATUS COUNTS (MEMOIZED)
+   * คำนวณจำนวนงานในแต่ละสถานะ FWD System ตามบริบทเดือนและบริการที่เลือก
+   * Flow: Job Booking Request > Job Control > Job Waiting > Job Complete
    * ========================================================================== */
-  const customsCounts = useMemo(() => {
+  const fwdCounts = useMemo(() => {
     let baseList = jobs;
     if (monthFilter !== "all") {
       baseList = baseList.filter((j) => getJobMonth(j) === monthFilter);
@@ -137,21 +147,31 @@ export default function JobsTable({
 
     const counts: Record<string, number> = {
       all: baseList.length,
-      "0109": 0,
-      "0209": 0,
-      "0309": 0,
-      "0409": 0,
+      Booking: 0,
+      Control: 0,
+      Waiting: 0,
+      Completed: 0,
+      Cancelled: 0,
     };
 
     for (const j of baseList) {
-      if (j.customsStatus === "0409") {
-        counts["0409"]++;
-      } else if (j.customsStatus === "0309") {
-        counts["0309"]++;
-      } else if (j.customsStatus === "0209") {
-        counts["0209"]++;
-      } else if (j.customsStatus === "0109") {
-        counts["0109"]++;
+      if (j.status === "Completed") {
+        counts.Completed++;
+      } else if (j.status === "Cancelled") {
+        counts.Cancelled++;
+      } else if (
+        (j.statusDetail || "").includes("Booking") ||
+        (j.statusDetail || "").includes("Request") ||
+        j.status === "Booking"
+      ) {
+        counts.Booking++;
+      } else if (
+        (j.statusDetail || "").includes("Wait") ||
+        j.statusDetail === "Job Waiting"
+      ) {
+        counts.Waiting++;
+      } else {
+        counts.Control++;
       }
     }
     return counts;
@@ -174,23 +194,38 @@ export default function JobsTable({
       list = list.filter((j) => j.service === serviceFilter);
     }
 
-    // 2.3 กรองตามสถานะ
+    // 2.3 กรองตามสถานะ (Job Booking Request > Job Control > Job Waiting > Job Complete)
     if (statusFilter !== "all") {
-      if (statusFilter === "Control") {
+      if (statusFilter === "Booking") {
+        list = list.filter(
+          (j) =>
+            (j.statusDetail || "").includes("Booking") ||
+            (j.statusDetail || "").includes("Request") ||
+            j.status === "Booking"
+        );
+      } else if (statusFilter === "Control") {
         list = list.filter(
           (j) =>
             (j.statusDetail || "").includes("Control") ||
-            j.status === "In Progress"
+            (j.status === "In Progress" &&
+              !(j.statusDetail || "").includes("Wait") &&
+              !(j.statusDetail || "").includes("Booking") &&
+              !(j.statusDetail || "").includes("Request"))
         );
       } else if (statusFilter === "Waiting") {
         list = list.filter(
           (j) =>
             (j.statusDetail || "").includes("Wait") ||
-            (j.statusDetail || "").includes("Booking") ||
-            j.status === "Booking"
+            j.statusDetail === "Job Waiting"
         );
+      } else if (statusFilter === "Completed") {
+        list = list.filter((j) => j.status === "Completed");
+      } else if (statusFilter === "Cancelled") {
+        list = list.filter((j) => j.status === "Cancelled");
       } else {
-        list = list.filter((j) => j.status === statusFilter);
+        list = list.filter(
+          (j) => j.status === statusFilter || j.statusDetail === statusFilter
+        );
       }
     }
 
@@ -349,11 +384,12 @@ export default function JobsTable({
           aria-label="กรองตามสถานะ"
           className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-800 focus:border-[#f56a22] focus:ring-1 focus:ring-[#f56a22] outline-none"
         >
-          <option value="all">ทุกสถานะ</option>
-          <option value="Control">กำลังดำเนินการ</option>
-          <option value="Waiting">รอเอกสาร</option>
-          <option value="Completed">เสร็จสิ้น</option>
-          <option value="Cancelled">ยกเลิก</option>
+          <option value="all">ทุกสถานะ (All)</option>
+          <option value="Booking">Job Booking Request</option>
+          <option value="Control">Job Control</option>
+          <option value="Waiting">Job Waiting</option>
+          <option value="Completed">Job Complete</option>
+          <option value="Cancelled">Job Cancelled</option>
         </select>
 
         {/* ตัวเลือกเฉพาะงานเกินกำหนด ETD */}
@@ -377,22 +413,23 @@ export default function JobsTable({
       </div>
 
       {/* --------------------------------------------------------------------
-       * PIPELINE FILTER BAR: ตัวกรองด่วนตามขั้นตอนพิธีการศุลกากร (e-Customs Pipeline)
+       * FWD SYSTEM STATUS FILTER BAR: ตัวกรองด่วนตามสถานะ FWD System
+       * Flow: Job Booking Request > Job Control > Job Waiting > Job Complete
        * -------------------------------------------------------------------- */}
       <div className="px-4 py-2.5 bg-[#f8fafc] border-b border-[#dce2e8] flex flex-wrap items-center gap-2 text-xs">
         <span className="font-semibold text-[#073766] flex items-center gap-1.5 mr-1 select-none">
           <Layers className="w-3.5 h-3.5 text-[#073766]" />
-          <span>ขั้นตอนใบขน (e-Customs Pipeline):</span>
+          <span>สถานะ FWD System:</span>
         </span>
 
         {/* ปุ่ม ทั้งหมด */}
         <button
           onClick={() => {
-            setCustomsFilter("all");
+            setStatusFilter("all");
             setPageNum(1);
           }}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-[background-color,border-color,color,box-shadow] duration-150 ease-out text-xs font-medium cursor-pointer ${
-            customsFilter === "all"
+            statusFilter === "all"
               ? "bg-[#071a2f] border-[#071a2f] text-white shadow-sm font-semibold"
               : "bg-white border-[#dce2e8] text-[#526275] hover:bg-slate-100 hover:text-[#102238]"
           }`}
@@ -400,26 +437,31 @@ export default function JobsTable({
           <span>ทั้งหมด</span>
           <span
             className={`px-1.5 py-0.2 text-[11px] rounded-full font-mono font-semibold ${
-              customsFilter === "all"
+              statusFilter === "all"
                 ? "bg-white/20 text-white"
                 : "bg-slate-100 text-[#526275]"
             }`}
           >
-            {fmtNum(customsCounts.all)}
+            {fmtNum(fwdCounts.all)}
           </span>
         </button>
 
-        {PIPELINE_STEPS.map((step) => {
-          const isActive = customsFilter === step.code;
-          const count = customsCounts[step.code] || 0;
+        {FWD_STATUS_STEPS.map((step, idx) => {
+          const isActive = statusFilter === step.code;
+          const count = fwdCounts[step.code] || 0;
           return (
             <React.Fragment key={step.code}>
-              <span className="text-[#94a3b8] font-bold select-none hidden sm:inline">
-                →
-              </span>
+              {idx > 0 && idx < 4 && (
+                <span className="text-[#94a3b8] font-bold select-none text-xs hidden sm:inline px-0.5">
+                  &gt;
+                </span>
+              )}
+              {idx === 4 && (
+                <span className="text-[#cbd5e1] select-none mx-1 hidden sm:inline">|</span>
+              )}
               <button
                 onClick={() => {
-                  setCustomsFilter(isActive ? "all" : step.code);
+                  setStatusFilter(isActive ? "all" : step.code);
                   setPageNum(1);
                 }}
                 title={`${step.desc} (คลิกเพื่อกรอง / คลิกซ้ำเพื่อยกเลิก)`}
@@ -447,14 +489,15 @@ export default function JobsTable({
           );
         })}
 
-        {/* แสดงคำอธิบายของขั้นตอนที่เลือกอยู่ */}
-        {customsFilter !== "all" && (
+        {/* แสดงคำอธิบายของสถานะที่เลือกอยู่ */}
+        {statusFilter !== "all" && (
           <span className="ml-auto text-[11.5px] text-[#073766] font-medium bg-[#eaf4fc] px-2.5 py-1 rounded-md border border-[#073766]/15 hidden md:inline-flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#073766]" />
-            {customsFilter === "0109" && "ร่างใบขน (0109): ดูงานที่เอกสารยังไม่ครบ ยังไม่ได้ยิงใบขน"}
-            {customsFilter === "0209" && "ยิงใบขนแล้ว (0209): ดูงานที่รอเจ้าหน้าที่ศุลกากรตรวจปล่อย"}
-            {customsFilter === "0309" && "ชำระภาษีแล้ว (0309): งานพร้อมนำสินค้าออกจากท่า"}
-            {customsFilter === "0409" && "ตรวจปล่อยสมบูรณ์ (0409): งานที่พร้อมปิดชุดทำเบิกเงิน"}
+            {statusFilter === "Booking" && "Job Booking Request: คำขอเปิดงาน / จองระวางเรือ-เครื่องบิน"}
+            {statusFilter === "Control" && "Job Control: อยู่ระหว่างควบคุมและดำเนินงานขนส่ง"}
+            {statusFilter === "Waiting" && "Job Waiting: รอเอกสาร / รอตรวจสอบ / รอปล่อยสินค้า"}
+            {statusFilter === "Completed" && "Job Complete: ปิดงานและจัดส่งสมบูรณ์เรียบร้อย"}
+            {statusFilter === "Cancelled" && "Job Cancelled: งานที่ถูกยกเลิก"}
           </span>
         )}
       </div>
@@ -469,13 +512,13 @@ export default function JobsTable({
               <th className="py-3 px-4">Job No</th>
               <th className="py-3 px-3">บริการ</th>
               <th className="py-3 px-4">ผู้นำเข้า / ส่งออก (Importer / Customer)</th>
-              <th className="py-3 px-3">เลขที่ใบขน (Declaration)</th>
+              <th className="py-3 px-3">สถานะ</th>
+              <th className="py-3 px-3">B/L No. (MBL / HBL)</th>
               <th className="py-3 px-3">Invoice No</th>
-              <th className="py-3 px-3">ETD / Submit</th>
+              <th className="py-3 px-3">ETD / ETA</th>
               <th className="py-3 px-3">สายเรือ / ตู้ / เส้นทาง</th>
               <th className="py-3 px-3">CS</th>
               <th className="py-3 px-3 min-w-[200px]">Update Status</th>
-              <th className="py-3 px-3">สถานะ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-[13px] tabular-nums">
@@ -537,55 +580,40 @@ export default function JobsTable({
                       )}
                     </td>
 
-                    {/* Declaration No & Customs Status (0109-0409) */}
+                    {/* Status Badge */}
+                    <td className="py-3 px-3 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-0.5 rounded border whitespace-nowrap ${st.badge}`}
+                      >
+                        <i className={`w-1.5 h-1.5 rounded-full shrink-0 ${st.dot}`} />
+                        {st.label}
+                      </span>
+                    </td>
+
+                    {/* B/L No (MBL / HBL) */}
                     <td className="py-3 px-3 font-mono text-xs whitespace-nowrap">
-                      {j.declarationNo ? (
+                      {j.mbl || j.hbl || j.bl ? (
                         <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-[#102238]">
-                              {j.declarationNo}
-                            </span>
-                            {j.customsStatus && (
-                              <span
-                                className={`text-[10.5px] px-1.5 py-0.5 rounded font-semibold ${
-                                  j.customsStatus === "0409"
-                                    ? "bg-[#e6f5f0] text-[#0d7a5f]"
-                                    : j.customsStatus === "0309"
-                                    ? "bg-[#e0e7ff] text-[#4338ca]"
-                                    : j.customsStatus === "0209"
-                                    ? "bg-[#e0f2fe] text-[#0369a1]"
-                                    : "bg-[#fff1e8] text-[#db5610]"
-                                }`}
-                              >
-                                {j.customsStatus}
-                              </span>
-                            )}
+                          <div className="font-semibold text-[#102238]">
+                            {j.mbl || j.bl}
                           </div>
-                          {j.referenceNo && (
-                            <div className="text-[11px] text-[#6e7e91]">
-                              Ref: {j.referenceNo}
+                          {j.hbl && j.mbl && j.hbl !== j.mbl && (
+                            <div className="text-[10.5px] text-[#6e7e91] font-mono">
+                              HBL: {j.hbl}
+                            </div>
+                          )}
+                          {j.declarationNo && (
+                            <div className="text-[10px] text-[#0d7a5f] font-mono">
+                              ใบขน: {j.declarationNo}
                             </div>
                           )}
                         </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-slate-400 text-xs font-mono">— รอยิงใบขน</span>
-                          {j.customsStatus && (
-                            <span
-                              className={`text-[10.5px] px-1.5 py-0.5 rounded font-semibold ${
-                                j.customsStatus === "0409"
-                                  ? "bg-[#e6f5f0] text-[#0d7a5f]"
-                                  : j.customsStatus === "0309"
-                                  ? "bg-[#e0e7ff] text-[#4338ca]"
-                                  : j.customsStatus === "0209"
-                                  ? "bg-[#e0f2fe] text-[#0369a1]"
-                                  : "bg-[#fff1e8] text-[#db5610]"
-                              }`}
-                            >
-                              {j.customsStatus}
-                            </span>
-                          )}
+                      ) : j.declarationNo ? (
+                        <div className="font-semibold text-[#102238]">
+                          {j.declarationNo}
                         </div>
+                      ) : (
+                        <span className="text-slate-300 font-mono">—</span>
                       )}
                     </td>
 
@@ -594,12 +622,12 @@ export default function JobsTable({
                       {j.invoiceNo || <span className="text-slate-300 font-mono">—</span>}
                     </td>
 
-                    {/* ETD & Clear Date */}
+                    {/* ETD & ETA */}
                     <td className="py-3 px-3 num text-[#102238] whitespace-nowrap">
-                      <div>{fmtDate(j.etd)}</div>
-                      {j.clearDate && (
-                        <div className="text-[11px] text-[#0d7a5f] font-mono">
-                          ปล่อย: {fmtDate(j.clearDate)}
+                      <div>ETD: {fmtDate(j.etd)}</div>
+                      {j.eta && (
+                        <div className="text-[11px] text-[#5288b6] font-mono">
+                          ETA: {fmtDate(j.eta)}
                         </div>
                       )}
                     </td>
@@ -642,16 +670,6 @@ export default function JobsTable({
                       ) : (
                         <span className="text-[#94a3b8]">—</span>
                       )}
-                    </td>
-
-                    {/* Status Badge */}
-                    <td className="py-3 px-3 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-0.5 rounded border whitespace-nowrap ${st.badge}`}
-                      >
-                        <i className={`w-1.5 h-1.5 rounded-full shrink-0 ${st.dot}`} />
-                        {st.label}
-                      </span>
                     </td>
                   </tr>
                 );

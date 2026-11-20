@@ -309,45 +309,39 @@ export default function JobDrawer({
                 )}
               </div>
 
-              {/* 1. ข้อมูลใบขนสินค้าศุลกากร (e-Customs 0409) */}
+              {/* 1. ข้อมูลเอกสารชิปเมนท์และ B/L */}
               <div className="p-4 rounded-[8px] bg-[#f7f5ef] border border-[#dce2e8] space-y-3">
                 <div className="flex items-center justify-between border-b border-[#dce2e8] pb-2">
                   <h3 className="text-[13.5px] font-bold text-[#071a2f]">
-                    ข้อมูลใบขนสินค้าศุลกากร (e-Customs 0409)
+                    ข้อมูลเอกสารชิปเมนท์และ B/L (Shipment &amp; Documents)
                   </h3>
-                  {selectedJob.customsStatus ? (
-                    <span
-                      className={`font-mono text-xs font-bold px-2.5 py-0.5 rounded ${
-                        selectedJob.customsStatus === "0409"
-                          ? "bg-[#e6f5f0] text-[#0d7a5f]"
-                          : "bg-[#fff1e8] text-[#db5610]"
-                      }`}
-                    >
-                      STATUS: {selectedJob.customsStatus}
-                    </span>
-                  ) : (
-                    <span className="font-mono text-xs text-[#6e7e91]">
-                      รอยิงใบขน
-                    </span>
-                  )}
+                  <span
+                    className={`font-mono text-xs font-bold px-2.5 py-0.5 rounded ${
+                      selectedJob.status === "Completed"
+                        ? "bg-[#e6f5f0] text-[#0d7a5f]"
+                        : "bg-[#e0f2fe] text-[#0369a1]"
+                    }`}
+                  >
+                    {selectedJob.statusDetail || selectedJob.status}
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-[13px]">
                   <div>
-                    <div className="text-xs text-[#526275]">เลขที่ใบขน (DECLARATION)</div>
+                    <div className="text-xs text-[#526275]">B/L NO. (MBL / HBL)</div>
                     <div className="font-mono font-bold text-[#073766] mt-0.5">
-                      {selectedJob.declarationNo || "—"}
+                      {selectedJob.mbl || selectedJob.bl || selectedJob.hbl || "—"}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-[#526275]">เลขอ้างอิง (REFERENCE NO)</div>
+                    <div className="text-xs text-[#526275]">JOIN NO. / REF NO.</div>
                     <div className="font-mono font-semibold text-[#102238] mt-0.5">
-                      {selectedJob.referenceNo || "—"}
+                      {selectedJob.joinNo || selectedJob.referenceNo || "—"}
                     </div>
                   </div>
                   <div className="col-span-2">
                     <div className="text-xs text-[#526275]">
-                      ผู้นำเข้า / ผู้ส่งออกจริง (Importer / Exporter)
+                      ลูกค้า / ผู้นำเข้า-ส่งออก (Customer / Consignee)
                     </div>
                     <div className="font-semibold text-[#102238] mt-0.5">
                       {selectedJob.consignee || selectedJob.customer || "—"}
@@ -360,23 +354,25 @@ export default function JobDrawer({
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-[#526275]">วันที่ยิงใบขน (SUBMIT DD)</div>
+                    <div className="text-xs text-[#526275]">ETD / ETA</div>
                     <div className="font-mono font-semibold text-[#102238] mt-0.5">
-                      {fmtDate(selectedJob.submitDate || selectedJob.customsDate)}
+                      {fmtDate(selectedJob.etd)} {selectedJob.eta ? `→ ${fmtDate(selectedJob.eta)}` : ""}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-[#526275]">ท่าตรวจปล่อย / ท่านำเข้า-ส่งออก</div>
+                    <div className="text-xs text-[#526275]">ท่าเรือ / เส้นทาง (Port / Route)</div>
                     <div className="font-mono text-[#102238] mt-0.5">
-                      {selectedJob.releaseLoc || "—"} / {selectedJob.portCode || "—"}
+                      {(selectedJob.pol || selectedJob.pod)
+                        ? `${selectedJob.pol || ""}${selectedJob.pol && selectedJob.pod ? " → " : ""}${selectedJob.pod || ""}`
+                        : selectedJob.placeOfDelivery || "—"}
                     </div>
                   </div>
-                  <div>
-                    <div className="text-xs text-[#526275]">เลขที่ใบกำกับ / จำนวนใบขน</div>
-                    <div className="font-mono text-[#102238] mt-0.5">
-                      {selectedJob.manifestNo || "—"} ({selectedJob.declarationCount || 1} ฉบับ)
+                  {selectedJob.declarationNo && (
+                    <div className="col-span-2 pt-1 border-t border-[#dce2e8]">
+                      <span className="text-xs text-[#526275]">เลขที่ใบขน: </span>
+                      <span className="font-mono font-semibold text-[#0d7a5f]">{selectedJob.declarationNo}</span>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* ลำดับเวลาสถานะกรมศุลกากร (0109 -> 0209 -> 0309 -> 0409) */}
@@ -545,39 +541,71 @@ export default function JobDrawer({
                 </div>
               </div>
 
-              {/* 3. ไทม์ไลน์ 5 ขั้นตอน (Customs & Delivery Milestones) */}
+              {/* 3. ไทม์ไลน์สถานะการดำเนินงาน (Shipment Milestones) */}
               <div>
                 <h3 className="text-[13px] font-bold uppercase tracking-wider text-[#526275] mb-3">
-                  สถานะการดำเนินงาน 5 ขั้นตอน (Customs &amp; Delivery Milestones)
+                  {selectedJob.customsStatus
+                    ? "สถานะการดำเนินงาน 5 ขั้นตอน (Customs & Delivery Milestones)"
+                    : "สถานะการดำเนินงาน (FWD Shipment Milestones)"}
                 </h3>
                 <div className="space-y-3 border-l-2 border-[#dce2e8] ml-2.5 pl-4">
-                  {[
-                    {
-                      done: selectedJob.draftCustoms,
-                      date: selectedJob.draftDate,
-                      name: "1. ออก Draft ใบขนสินค้า (0109 / Reference No)",
-                    },
-                    {
-                      done: selectedJob.customsFiled,
-                      date: selectedJob.customsDate,
-                      name: "2. ยิงใบขนจริง (0209 / SUBMIT DD)",
-                    },
-                    {
-                      done: selectedJob.doReleased,
-                      date: selectedJob.doDate,
-                      name: "3. ชำระภาษี / ตัดบัญชี / แลก DO (0309)",
-                    },
-                    {
-                      done: selectedJob.cleared,
-                      date: selectedJob.clearDate,
-                      name: "4. ตรวจปล่อยออกจากอารักขา (0409 / Clear Date)",
-                    },
-                    {
-                      done: selectedJob.advanceDoc,
-                      date: selectedJob.advanceDate,
-                      name: "5. ส่งมอบและปิดชุดงาน (Job Complete)",
-                    },
-                  ].map((step) => (
+                  {(selectedJob.customsStatus
+                    ? [
+                        {
+                          done: selectedJob.draftCustoms,
+                          date: selectedJob.draftDate,
+                          name: "1. ออก Draft ใบขนสินค้า (0109 / Reference No)",
+                        },
+                        {
+                          done: selectedJob.customsFiled,
+                          date: selectedJob.customsDate,
+                          name: "2. ยิงใบขนจริง (0209 / SUBMIT DD)",
+                        },
+                        {
+                          done: selectedJob.doReleased,
+                          date: selectedJob.doDate,
+                          name: "3. ชำระภาษี / ตัดบัญชี / แลก DO (0309)",
+                        },
+                        {
+                          done: selectedJob.cleared,
+                          date: selectedJob.clearDate,
+                          name: "4. ตรวจปล่อยออกจากอารักขา (0409 / Clear Date)",
+                        },
+                        {
+                          done: selectedJob.advanceDoc,
+                          date: selectedJob.advanceDate,
+                          name: "5. ส่งมอบและปิดชุดงาน (Job Complete)",
+                        },
+                      ]
+                    : [
+                        {
+                          done: true,
+                          date: selectedJob.jobDate,
+                          name: "1. Job Booking Request (คำขอเปิดงาน / จองระวาง)",
+                        },
+                        {
+                          done: selectedJob.status !== "Booking",
+                          date: selectedJob.etd,
+                          name: "2. Job Control (ควบคุมงานขนส่ง / กำหนดออกเดินทาง ETD)",
+                        },
+                        {
+                          done:
+                            selectedJob.status === "Completed" ||
+                            (selectedJob.statusDetail || "").includes("Wait") ||
+                            Boolean(
+                              selectedJob.eta &&
+                                new Date(selectedJob.eta) <= new Date()
+                            ),
+                          date: selectedJob.eta,
+                          name: "3. Job Waiting (รอเอกสาร / สินค้าถึงปลายทาง ETA)",
+                        },
+                        {
+                          done: selectedJob.status === "Completed",
+                          date: selectedJob.clearDate || selectedJob.eta || selectedJob.etd,
+                          name: "4. Job Complete (ปิดงานสมบูรณ์)",
+                        },
+                      ]
+                  ).map((step) => (
                     <div key={step.name} className="relative">
                       <span
                         className={`w-3 h-3 rounded-full absolute -left-[23px] top-1.5 border-2 border-white ${
@@ -590,8 +618,8 @@ export default function JobDrawer({
                       <div className="text-[12.5px] font-mono text-[#526275]">
                         {step.done
                           ? step.date
-                            ? `เสร็จเมื่อ ${fmtDate(step.date)}`
-                            : "บันทึกเสร็จสิ้นแล้ว"
+                            ? `${fmtDate(step.date)}`
+                            : "เสร็จสิ้น"
                           : "รอดำเนินการ"}
                       </div>
                     </div>

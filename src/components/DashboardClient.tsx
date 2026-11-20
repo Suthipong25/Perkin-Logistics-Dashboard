@@ -84,7 +84,7 @@ const PAGE_META: Record<PageKey, { title: string; sub: string }> = {
   },
   upload: {
     title: "นำเข้าและประมวลผลไฟล์",
-    sub: "ระบบผสานข้อมูลอัจฉริยะจากรายงาน FWD และ e-Customs เข้าสู่ฐานข้อมูลหลัก",
+    sub: "ระบบผสานข้อมูลอัจฉริยะจากรายงาน FWD System เข้าสู่ฐานข้อมูลหลัก",
   },
   safety: {
     title: "ระบบสำรองและกู้คืนข้อมูล",

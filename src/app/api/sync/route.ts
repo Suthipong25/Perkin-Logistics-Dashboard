@@ -2,25 +2,30 @@ import { NextResponse } from "next/server";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
-import path from "path";
-import { getJobs, getTransport, getQuality, getQualityAlerts, getSnapshots, ADVANCE_ROWS } from "@/lib/data-store";
+import {
+  getJobs,
+  getTransport,
+  getQuality,
+  getQualityAlerts,
+  getSnapshots,
+  ADVANCE_ROWS,
+} from "@/lib/data-store";
 import { fetchJobsFromPostgres, fetchTransportFromPostgres } from "@/lib/db";
+import { resolveScript } from "@/lib/upload-sync-helpers";
 
 const execFileAsync = promisify(execFile);
 export const dynamic = "force-dynamic";
 
 export async function POST() {
   try {
-    const pythonExe =
-      process.env.PYTHON_PATH ||
-      "python";
+    const pythonExe = process.env.PYTHON_PATH || "python";
 
     // 1. Pull fresh data from PostgreSQL if on a system with Python & scripts
-    const localPgSync = path.resolve(process.cwd(), "scripts/sync_from_postgres.py");
-    const fallbackPgSync = path.resolve(process.cwd(), "../backend/scripts/sync_from_postgres.py");
-    const pgSyncScript = fs.existsSync(localPgSync) ? localPgSync : fallbackPgSync;
-
-    if (fs.existsSync(pgSyncScript) && (process.env.PGPASSWORD || process.env.DATABASE_URL)) {
+    const pgSyncScript = resolveScript("sync_from_postgres.py");
+    if (
+      fs.existsSync(pgSyncScript) &&
+      (process.env.PGPASSWORD || process.env.DATABASE_URL)
+    ) {
       try {
         await execFileAsync(pythonExe, [pgSyncScript]);
         console.log("[SYNC] Pulled latest data via Python script.");
@@ -34,7 +39,8 @@ export async function POST() {
     const pgTransport = await fetchTransportFromPostgres();
 
     const jobs = pgJobs && pgJobs.length > 0 ? pgJobs : getJobs();
-    const transport = pgTransport && pgTransport.length > 0 ? pgTransport : getTransport();
+    const transport =
+      pgTransport && pgTransport.length > 0 ? pgTransport : getTransport();
 
     return NextResponse.json(
       {
@@ -52,7 +58,8 @@ export async function POST() {
       },
       {
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+          "Cache-Control":
+            "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
           Pragma: "no-cache",
           Expires: "0",
         },
@@ -72,7 +79,8 @@ export async function POST() {
       },
       {
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+          "Cache-Control":
+            "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
           Pragma: "no-cache",
           Expires: "0",
         },

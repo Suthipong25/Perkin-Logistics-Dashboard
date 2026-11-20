@@ -203,36 +203,44 @@ export function statusMeta(job: JobRecord) {
   if (job.status === "Completed")
     return {
       key: "Completed",
-      label: "เสร็จสิ้น",
+      label: "Job Complete",
       dot: "bg-[#0d7a5f]",
       badge: "bg-[#e6f5f0] text-[#0d7a5f] border-[#0d7a5f]/25",
     };
   if (job.status === "Cancelled")
     return {
       key: "Cancelled",
-      label: "ยกเลิก",
+      label: "Job Cancelled",
       dot: "bg-[#6e7e91]",
       badge: "bg-slate-100 text-[#526275] border-slate-300",
     };
-  if (job.statusDetail === "Waiting" || job.statusDetail === "Job Waiting")
-    return {
-      key: "Waiting",
-      label: "รอเอกสาร",
-      dot: "bg-[#073766]",
-      badge: "bg-[#eaf4fc] text-[#073766] border-[#073766]/25",
-    };
-  if (job.status === "Booking" || job.statusDetail === "Job Booking")
+  if (
+    job.status === "Booking" ||
+    (job.statusDetail || "").includes("Booking") ||
+    (job.statusDetail || "").includes("Request")
+  )
     return {
       key: "Booking",
-      label: "จองระวาง",
-      dot: "bg-[#5288b6]",
-      badge: "bg-[#eaf4fc] text-[#073766] border-[#5288b6]/30",
+      label: "Job Booking Request",
+      dot: "bg-[#8b5cf6]",
+      badge: "bg-[#ede9fe] text-[#6d28d9] border-[#8b5cf6]/30",
+    };
+  if (
+    job.statusDetail === "Waiting" ||
+    job.statusDetail === "Job Waiting" ||
+    (job.statusDetail || "").includes("Wait")
+  )
+    return {
+      key: "Waiting",
+      label: "Job Waiting",
+      dot: "bg-[#f56a22]",
+      badge: "bg-[#fff1e8] text-[#c2410c] border-[#f56a22]/30",
     };
   return {
     key: "Control",
-    label: "กำลังดำเนินการ",
-    dot: "bg-[#f56a22]",
-    badge: "bg-[#fff1e8] text-[#b45309] border-[#f56a22]/30",
+    label: "Job Control",
+    dot: "bg-[#0284c7]",
+    badge: "bg-[#e0f2fe] text-[#0369a1] border-[#0284c7]/25",
   };
 }
 

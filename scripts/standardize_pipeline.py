@@ -110,7 +110,7 @@ def classify_status(raw):
     if 'wait' in s or 'รอ' in s:
         return 'In Progress', 'Job Waiting'
     if 'booking' in s:
-        return 'Booking', 'Job Booking'
+        return 'Booking', 'Job Booking Request'
     return 'In Progress', 'Job Control'
 
 
@@ -151,7 +151,8 @@ def find_header(rows):
             ('inv', lambda v: 'INV' in v), ('mbl', lambda v: 'MBL' in v), ('hbl', lambda v: 'HBL' in v),
             ('gw', lambda v: v.startswith('G.W')), ('cbm', lambda v: 'MEASUREMENT' in v),
             ('container', lambda v: 'CONTAINER' in v), ('cs', lambda v: v.startswith('CS')),
-            ('commodity', lambda v: 'COMMODITY' in v)]
+            ('commodity', lambda v: 'COMMODITY' in v),
+            ('carrier', lambda v: 'CARRIER' in v), ('routing', lambda v: 'ROUTING' in v)]
     for r_num, cells in rows[:6]:
         upper = {col: v.upper() for col, v in cells.items() if v}
         if not any(v.startswith('JOB NO') for v in upper.values()):
@@ -237,8 +238,9 @@ def extract_booking(path):
                 "jobDate": job_date,
                 "month": row_month,
                 "year": 2026,
-                "draftCustoms": done, "advanceDoc": False, "doReleased": done,
-                "customsFiled": done, "cleared": done,
+                "customsStatus": None,
+                "draftCustoms": False, "advanceDoc": False, "doReleased": done,
+                "customsFiled": False, "cleared": done,
                 "draftDate": None, "customsDate": None, "doDate": None, "clearDate": None,
                 "advanceDate": None, "remark": None,
                 "sourceSheet": sheet,
@@ -250,6 +252,8 @@ def extract_booking(path):
                 "grossWeight": to_float(c.get(h.get('gw', '~'), '')),
                 "cbm": to_float(c.get(h.get('cbm', '~'), '')),
                 "commodity": c.get(h.get('commodity', '~'), ''),
+                "carrier": c.get(h.get('carrier', '~'), '') or None,
+                "routing": c.get(h.get('routing', '~'), '') or None,
                 "csName": c.get(h.get('cs', '~'), ''),
                 "dataSource": "2026 Booking Report.xlsx",
             })
@@ -383,11 +387,18 @@ def run():
 
     # 1. Smart Auto-Detect: Check if user downloaded latest file to Downloads folder
     downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
-    dl_booking = os.path.join(downloads_dir, '2026 Booking Report.xlsx')
-    if os.path.exists(dl_booking) and has_monthly_sheets(dl_booking):
-        if not os.path.exists(booking) or os.path.getmtime(dl_booking) > os.path.getmtime(booking):
-            print(f"[AUTO-DETECT] Using latest file from Downloads: {dl_booking}")
-            shutil.copy2(dl_booking, booking)
+    if os.path.exists(downloads_dir):
+        candidates = [
+            os.path.join(downloads_dir, f) for f in os.listdir(downloads_dir)
+            if f.startswith('2026 Booking Report') and f.endswith('.xlsx') and not f.startswith('~$')
+        ]
+        candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        for cand in candidates:
+            if has_monthly_sheets(cand):
+                if not os.path.exists(booking) or os.path.getmtime(cand) > os.path.getmtime(booking):
+                    print(f"[AUTO-DETECT] Using latest file from Downloads: {cand}")
+                    shutil.copy2(cand, booking)
+                    break
 
     for name in ('JOB_Daily_2026 STATUS_Dashboard.xlsx', 'JOB_Daily_2026 STATUS_Dashboard (1).xlsx'):
         dl_daily = os.path.join(downloads_dir, name)
@@ -423,48 +434,8 @@ def run():
     print(f"  รวม {len(jobs)} งาน | {dict(Counter(j['service'] for j in jobs))}")
     print(f"  สถานะ {dict(Counter(j['statusDetail'] for j in jobs))}")
 
-    # Enrich master jobs with Daily Ops (Draft ใบขน, 0209/0309/0409, Advance, DO, Transport No)
-    if os.path.exists(daily):
-        print(f"[2/3] Daily Operations Tracking: {daily}")
-        ops_by_job = extract_daily_ops(daily)
-        enriched_count = 0
-        for j in jobs:
-            jno = j.get('jobNo', '').upper()
-            if jno in ops_by_job:
-                ops = ops_by_job[jno]
-                j['draftCustoms'] = ops['draftCustoms']
-                if ops['draftDate']: j['draftDate'] = ops['draftDate']
-                if ops['o209']: j['o209'] = ops['o209']
-                if ops['o309']: j['o309'] = ops['o309']
-                if ops['o409']: j['o409'] = ops['o409']
-                j['advanceDoc'] = ops['advanceDoc']
-                if ops['advanceDate']: j['advanceDate'] = ops['advanceDate']
-                j['doReleased'] = ops['doReleased']
-                if ops['doDate']: j['doDate'] = ops['doDate']
-                j['customsFiled'] = ops['customsFiled']
-                if ops['customsDate']: j['customsDate'] = ops['customsDate']
-                j['cleared'] = ops['cleared']
-                if ops['clearDate']: j['clearDate'] = ops['clearDate']
-                if ops['transportNo']: j['transportTripNo'] = ops['transportNo']
-                if ops.get('updateStatus'): j['updateStatus'] = ops['updateStatus']
-                if ops['remark']: j['remark'] = ops['remark']
-                if ops.get('o409'):
-                    j['customsStatus'] = '0409'
-                elif ops.get('o309'):
-                    j['customsStatus'] = '0309'
-                elif ops.get('o209'):
-                    j['customsStatus'] = '0209'
-                elif ops.get('draftCustoms'):
-                    j['customsStatus'] = '0109'
-                enriched_count += 1
-            elif j.get('status') == 'Completed':
-                j['customsStatus'] = '0409'
-            elif j.get('customsFiled'):
-                j['customsStatus'] = '0209'
-            elif j.get('draftCustoms'):
-                j['customsStatus'] = '0109'
-        print(f"  Enriched {enriched_count} master jobs with daily operations details")
-
+    # Master jobs are strictly sourced from FWD System (2026 Booking Report.xlsx)
+    # Customs status overrides (0109-0409) are omitted per user instruction: pure FWD System truth.
     if len(jobs) > 0:
         with open(os.path.join(data_dir, 'jobs.json'), 'w', encoding='utf-8') as f:
             json.dump(jobs, f, ensure_ascii=False, indent=2)
