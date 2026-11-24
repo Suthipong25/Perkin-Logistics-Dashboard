@@ -28,7 +28,7 @@ import {
   serviceMeta,
   computeNextAction,
 } from "@/lib/dashboard-helpers";
-import { X, Edit3, Check, FileSpreadsheet } from "lucide-react";
+import { X, Edit3, Check, FileSpreadsheet, Plane, Ship } from "lucide-react";
 
 /* ============================================================================
  * PROPS INTERFACE
@@ -482,7 +482,11 @@ export default function JobDrawer({
               <div className="p-4 rounded-[8px] bg-[#f0f7ff] border border-[#bcd7f5] space-y-3">
                 <div className="flex items-center justify-between border-b border-[#bcd7f5] pb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-base">{selectedJob.service?.includes("AIR") ? "✈️" : "🚢"}</span>
+                    {selectedJob.service?.includes("AIR") ? (
+                      <Plane className="w-4 h-4 text-sky-600 shrink-0" />
+                    ) : (
+                      <Ship className="w-4 h-4 text-[#073766] shrink-0" />
+                    )}
                     <h3 className="text-[13.5px] font-bold text-[#073766]">
                       {selectedJob.service?.includes("AIR")
                         ? "ข้อมูลสายการบิน & เที่ยวบิน (Air Freight Details)"

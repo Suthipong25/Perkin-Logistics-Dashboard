@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { CheckCircle2 } from "lucide-react";
 import { fmtNum, pct } from "@/lib/dashboard-helpers";
 
 interface OverviewKpiCardsProps {
@@ -182,8 +183,9 @@ export function OverviewKpiCards({ stats, onNavigateJobs }: OverviewKpiCardsProp
                 ของงานเปิดอยู่
               </span>
             ) : (
-              <span className="text-emerald-700 font-medium flex items-center gap-1">
-                ✓ กำหนดการเดินเรือ/ส่งมอบตรงเวลาทั้งหมด
+              <span className="text-emerald-700 font-medium flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>กำหนดการเดินเรือ/ส่งมอบตรงเวลาทั้งหมด</span>
               </span>
             )}
           </div>

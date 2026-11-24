@@ -10,13 +10,13 @@
  * 1. แสดงภาพรวม Total 12 เดือน (ม.ค. - ธ.ค. 2026) เป็นเส้นแนวโน้ม (Line Chart) ขนาดใหญ่ ชัดเจน
  * 2. เมื่อเลือกเดือนใดเดือนหนึ่ง จะแสดงเป็น "แผนภูมิแท่ง (Stacked Bar Chart)" รายวัน (วันที่ 1 - 31)
  *    แยกตามประเภทบริการเรียงตามลำดับที่ผู้ใช้กำหนด:
- *    - 🔵 SEA Import (เรือขาเข้า) - #0284c7
- *    - 🟢 SEA Export (เรือขาออก) - #059669
- *    - 🟣 AIR Import (แอร์ขาเข้า) - #8b5cf6
- *    - 🟠 AIR Export (แอร์ขาออก) - #f56a22
- *    - 🚚 Transport (งานรถขนส่ง) - #d97706
- *    - 📦 Freight (เฟรท) - #c07d53
- *    - ⚫ งานรวมทั้งหมด (Total) - #071a2f
+ *    - SEA Import (เรือขาเข้า) - #0284c7
+ *    - SEA Export (เรือขาออก) - #059669
+ *    - AIR Import (แอร์ขาเข้า) - #8b5cf6
+ *    - AIR Export (แอร์ขาออก) - #f56a22
+ *    - Transport (งานรถขนส่ง) - #d97706
+ *    - Freight (เฟรท) - #c07d53
+ *    - งานรวมทั้งหมด (Total) - #071a2f
  * 3. แสดงตัวเลขจำนวนงานบนยอดแท่ง/เส้น (Data Labels) อ่านง่าย มีขอบขาวป้องกันการกลืน
  * 4. สเกลขยายเต็มความกว้างหน้าจอ (Full Width) กว้าง 1,120px x สูง 440px อ่านค่าได้สบายตา
  * 5. Interactive Legend: คลิกเปิด/ปิดเส้นหรือแท่งแต่ละประเภทงานได้อิสระ
@@ -24,7 +24,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from "react";
-import { Calendar, BarChart2, TrendingUp } from "lucide-react";
+import { BarChart2, TrendingUp, Hash, Info } from "lucide-react";
 import { fmtNum } from "@/lib/dashboard-helpers";
 
 /* ============================================================================
@@ -142,19 +142,19 @@ export default function TrendChart({
   };
 
   /* ==========================================================================
-   * COORDINATE SYSTEM & EXPANDED DIMENSIONS (ขยายให้กว้างและสูงขึ้น เต็มจอ)
+   * COORDINATE SYSTEM & DIMENSIONS
    * ==========================================================================
-   * W = 1120, H = 440: เพิ่มพื้นที่แสดงผลให้โปร่งสบาย เส้นไม่ทับ แท่งไม่อึดอัด
-   * ซ้าย (pad.l = 140): ป้ายบริการ (Service) พร้อมเส้นโยงหรือไอคอน
-   * กลาง (iw = 895): แผนภูมิแท่งรายวัน 31 วัน หรือเส้นแนวโน้ม 12 เดือน
-   * ขวา (pad.r = 85): แกนแสดงตัวเลขจำนวนงาน (Jobs Count)
+   * W = 1120, H = 420
+   * pad.l = 56: แกน Y ตัวเลขจำนวนงาน (Jobs Count) ด้านซ้ายตามมาตรฐาน
+   * pad.r = 24: ระยะขอบขวา
+   * iw = 1040: พื้นที่กราฟกว้างขวาง แสดงผลคมชัด
    * ========================================================================== */
   const W = 1120;
-  const H = 440;
-  const pad = { l: 140, r: 85, t: 48, b: 48 };
+  const H = 420;
+  const pad = { l: 56, r: 24, t: 36, b: 38 };
 
-  const iw = W - pad.l - pad.r; // 895
-  const ih = H - pad.t - pad.b; // 344
+  const iw = W - pad.l - pad.r; // 1040
+  const ih = H - pad.t - pad.b; // 346
 
   const activeSeriesKeys = (Object.keys(visibleSeries) as SeriesKey[]).filter((k) => visibleSeries[k]);
   const stackKeys = activeSeriesKeys.filter((k) => k !== "total");
@@ -199,9 +199,9 @@ export default function TrendChart({
     return pad.l + (iw * i) / (currentData.length - 1);
   };
 
-  // พิกัด X และความกว้างสำหรับ Bar Chart (รายวัน 1 - 31) - ขนาดแท่งใหญ่ขึ้นชัดเจน (18-22px)
+  // พิกัด X และความกว้างสำหรับ Bar Chart (รายวัน 1 - 31)
   const colW = iw / Math.max(1, currentData.length);
-  const barW = Math.max(10, Math.min(22, colW * 0.72));
+  const barW = Math.max(12, Math.min(22, colW * 0.65));
   const getBarX = (i: number) => pad.l + colW * i + (colW - barW) / 2;
   const getBarCenterX = (i: number) => pad.l + colW * i + colW / 2;
 
@@ -235,66 +235,6 @@ export default function TrendChart({
   // จุดข้อมูลสำหรับ hover tooltip
   const hoveredPoint = hoverIndex !== null && currentData[hoverIndex] ? currentData[hoverIndex] : null;
 
-  // ตำแหน่งป้าย Service ด้านซ้าย
-  const servicePositions = useMemo(() => {
-    const firstPoint = currentData[0] || ({} as TrendDataPoint);
-    const items = SERIES_LIST.map((s) => {
-      const val = (firstPoint[s.key] as number) || 0;
-      const targetY = getY(val);
-      const isVisible = visibleSeries[s.key];
-      return {
-        ...s,
-        val,
-        targetY,
-        isVisible,
-        y: targetY,
-      };
-    });
-
-    if (viewMode === "months") {
-      items.sort((a, b) => {
-        if (a.isVisible && !b.isVisible) return -1;
-        if (!a.isVisible && b.isVisible) return 1;
-        return a.targetY - b.targetY;
-      });
-
-      const minGap = 36;
-      for (let i = 1; i < items.length; i++) {
-        if (items[i].y < items[i - 1].y + minGap) {
-          items[i].y = items[i - 1].y + minGap;
-        }
-      }
-
-      const maxBottom = H - pad.b - 14;
-      if (items.length > 0 && items[items.length - 1].y > maxBottom) {
-        items[items.length - 1].y = maxBottom;
-        for (let i = items.length - 2; i >= 0; i--) {
-          if (items[i].y > items[i + 1].y - minGap) {
-            items[i].y = items[i + 1].y - minGap;
-          }
-        }
-      }
-
-      const minTop = pad.t + 14;
-      if (items.length > 0 && items[0].y < minTop) {
-        items[0].y = minTop;
-        for (let i = 1; i < items.length; i++) {
-          if (items[i].y < items[i - 1].y + minGap) {
-            items[i].y = items[i - 1].y + minGap;
-          }
-        }
-      }
-    } else {
-      // ในโหมด Bar Chart รายวัน จัดตำแหน่งป้ายซ้ายให้อยู่ระยะห่างเท่าๆ กัน
-      const slotH = ih / SERIES_LIST.length;
-      items.forEach((item, idx) => {
-        item.y = pad.t + slotH * idx + slotH / 2;
-      });
-    }
-
-    return items;
-  }, [currentData, visibleSeries, max, H, pad.t, pad.b, viewMode, ih]);
-
   // ชื่อเดือนที่กำลังเลือก
   const selectedMonthLabel = useMemo(() => {
     if (activeMonth === "all") return "ภาพรวม 12 เดือน (2026)";
@@ -324,7 +264,7 @@ export default function TrendChart({
             }`}
           >
             <TrendingUp className="w-4 h-4" />
-            <span>ภาพรวม Total 12 เดือน</span>
+            <span>ภาพรวม 12 เดือน</span>
           </button>
           <button
             type="button"
@@ -342,7 +282,7 @@ export default function TrendChart({
             }`}
           >
             <BarChart2 className="w-4 h-4" />
-            <span>แผนภูมิแท่ง (วันที่ 1 - 31)</span>
+            <span>แผนภูมิรายวัน (1 - 31)</span>
           </button>
         </div>
 
@@ -359,8 +299,8 @@ export default function TrendChart({
             }`}
             title="คลิกเพื่อเปิด/ปิดการแสดงตัวเลขจำนวนงานบนแผนภูมิ"
           >
-            <span className="font-mono font-bold">123</span>
-            <span>{showDataLabels ? "ตัวเลขบนแท่ง: เปิด" : "ตัวเลขบนแท่ง: ปิด"}</span>
+            <Hash className="w-3.5 h-3.5" />
+            <span>{showDataLabels ? "ซ่อนตัวเลข" : "แสดงตัวเลข"}</span>
           </button>
 
           {/* Month Selector for Daily Bar Chart */}
@@ -384,20 +324,16 @@ export default function TrendChart({
               </select>
             </div>
           )}
-
-          <div className="text-[12px] font-mono text-[#073766] bg-[#f1f5f9] px-2.5 py-1 rounded-[6px] font-semibold border border-[#e2e8f0] hidden sm:block">
-            {viewMode === "months" ? "ม.ค. - ธ.ค. 2026" : selectedMonthLabel}
-          </div>
         </div>
       </div>
 
       {/* --------------------------------------------------------------------
-       * SVG CHART AREA: EXPANDED VIEW (W = 1120, H = 440)
+       * SVG CHART AREA: EXPANDED VIEW (W = 1120, H = 420)
        * -------------------------------------------------------------------- */}
       <div className="relative my-auto select-none flex-1 flex items-center justify-center w-full">
         <svg
           viewBox={`0 0 ${W} ${H}`}
-          className="w-full h-auto min-h-[400px] max-h-[580px] overflow-visible"
+          className="w-full h-auto min-h-[380px] max-h-[520px] overflow-visible"
           role="img"
           aria-label={
             viewMode === "daily"
@@ -407,17 +343,17 @@ export default function TrendChart({
           onMouseLeave={() => setHoverIndex(null)}
         >
           {/* ------------------------------------------------------------------
-           * LEFT AXIS: ประเภทบริการ (SERVICE)
+           * LEFT Y-AXIS: จำนวนงาน & HORIZONTAL GRIDLINES
            * ------------------------------------------------------------------ */}
           <text
-            x="14"
-            y={pad.t - 18}
-            fontSize="12"
+            x={pad.l}
+            y={pad.t - 14}
+            fontSize="11"
             fontWeight="700"
-            fill="#073766"
+            fill="#475569"
             className="tracking-tight"
           >
-            บริการ (Service)
+            จำนวนงาน (Jobs)
           </text>
 
           {/* เส้นขอบแกนซ้าย */}
@@ -427,99 +363,17 @@ export default function TrendChart({
             x2={pad.l}
             y2={H - pad.b}
             stroke="#cbd5e1"
-            strokeWidth="1.2"
+            strokeWidth="1"
             aria-hidden="true"
           />
 
-          {/* รายการ Service แต่ละอัน */}
-          {servicePositions.map((s) => {
-            return (
-              <g
-                key={`left-sv-${s.key}`}
-                onClick={() => toggleSeries(s.key)}
-                className="cursor-pointer transition-all duration-150"
-              >
-                <title>{`คลิกเพื่อ${s.isVisible ? "ซ่อน" : "แสดง"} ${s.label}`}</title>
-                {/* Background pill */}
-                <rect
-                  x="6"
-                  y={s.y - 13}
-                  width={pad.l - 16}
-                  height="26"
-                  rx="6"
-                  fill={s.isVisible ? "#f8fafc" : "#ffffff"}
-                  stroke={s.isVisible ? s.color : "#e2e8f0"}
-                  strokeWidth={s.isVisible ? "1.2" : "0.8"}
-                  strokeOpacity={s.isVisible ? "0.85" : "0.6"}
-                />
-                {/* Color dot */}
-                <circle
-                  cx="18"
-                  cy={s.y}
-                  r={s.isVisible ? 5 : 3.5}
-                  fill={s.isVisible ? s.color : "#cbd5e1"}
-                />
-                {/* Service Label Text */}
-                <text
-                  x="28"
-                  y={s.y + 4}
-                  fontSize="10.5"
-                  fontFamily="system-ui, -apple-system, sans-serif"
-                  fontWeight={s.isVisible ? "700" : "500"}
-                  fill={s.isVisible ? (s.key === "total" ? "#071a2f" : "#1e293b") : "#94a3b8"}
-                  style={{ textDecoration: s.isVisible ? "none" : "line-through" }}
-                >
-                  {s.label}
-                </text>
-
-                {/* ในโหมด Line Chart: โยงเส้นตรงเข้ากับจุดเริ่มต้นของเส้นกราฟ */}
-                {viewMode === "months" && (
-                  <path
-                    d={`M ${pad.l - 10} ${s.y} C ${pad.l - 4} ${s.y}, ${pad.l - 4} ${s.targetY}, ${pad.l} ${s.targetY}`}
-                    fill="none"
-                    stroke={s.color}
-                    strokeWidth={s.isVisible ? (s.key === "total" ? "2.5" : "1.8") : "0.8"}
-                    strokeDasharray={s.dash || "none"}
-                    strokeOpacity={s.isVisible ? 0.95 : 0.25}
-                    aria-hidden="true"
-                  />
-                )}
-              </g>
-            );
-          })}
-
-          {/* ------------------------------------------------------------------
-           * RIGHT AXIS: ตัวเลขจำนวนงาน (JOBS COUNT) & GRIDLINES
-           * ------------------------------------------------------------------ */}
-          <text
-            x={W - pad.r + 10}
-            y={pad.t - 18}
-            fontSize="12"
-            fontWeight="700"
-            fill="#073766"
-            className="tracking-tight"
-          >
-            จำนวนงาน
-          </text>
-
-          {/* เส้นขอบแกนขวา */}
-          <line
-            x1={W - pad.r}
-            y1={pad.t}
-            x2={W - pad.r}
-            y2={H - pad.b}
-            stroke="#cbd5e1"
-            strokeWidth="1.2"
-            aria-hidden="true"
-          />
-
-          {/* Gridlines & ตัวเลขสเกลด้านขวา */}
+          {/* Gridlines & ตัวเลขสเกลด้านซ้าย */}
           {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
             const val = Math.round(max * ratio);
             const yy = getY(val);
             return (
               <g key={idx}>
-                {/* Gridline */}
+                {/* Horizontal Gridline */}
                 <line
                   x1={pad.l}
                   y1={yy}
@@ -531,29 +385,40 @@ export default function TrendChart({
                 />
                 {/* Tick mark */}
                 <line
-                  x1={W - pad.r}
+                  x1={pad.l - 5}
                   y1={yy}
-                  x2={W - pad.r + 5}
+                  x2={pad.l}
                   y2={yy}
                   stroke="#94a3b8"
-                  strokeWidth="1.2"
+                  strokeWidth="1"
                   aria-hidden="true"
                 />
-                {/* Scale Number */}
+                {/* Scale Number on Left */}
                 <text
-                  x={W - pad.r + 10}
+                  x={pad.l - 9}
                   y={yy + 4}
-                  textAnchor="start"
+                  textAnchor="end"
                   fontSize="11"
                   fontFamily="IBM Plex Mono, monospace"
                   fontWeight="600"
-                  fill="#475569"
+                  fill="#64748b"
                 >
                   {fmtNum(val)}
                 </text>
               </g>
             );
           })}
+
+          {/* เส้นขอบแกนล่าง (X-Axis Baseline) */}
+          <line
+            x1={pad.l}
+            y1={H - pad.b}
+            x2={W - pad.r}
+            y2={H - pad.b}
+            stroke="#cbd5e1"
+            strokeWidth="1"
+            aria-hidden="true"
+          />
 
           {/* ------------------------------------------------------------------
            * MODE 1: BAR CHART (แผนภูมิแท่ง) — แสดงเมื่อเลือกเดือนเฉพาะ (กว้างและใหญ่ขึ้น)
@@ -648,14 +513,10 @@ export default function TrendChart({
                         x={cx}
                         y={currentY - 5}
                         textAnchor="middle"
-                        fontSize={isHovered ? "11.5" : "10"}
+                        fontSize={isHovered ? "11" : "10"}
                         fontWeight="700"
                         fontFamily="IBM Plex Mono, monospace"
-                        fill="#071a2f"
-                        stroke="#ffffff"
-                        strokeWidth="3"
-                        paintOrder="stroke fill"
-                        strokeLinejoin="round"
+                        fill="#0c2340"
                         className="pointer-events-none select-none"
                       >
                         {fmtNum(dayTotal)}
@@ -938,8 +799,9 @@ export default function TrendChart({
           })}
         </div>
 
-        <div className="text-[12px] text-[#6e7e91] flex items-center gap-1 font-medium">
-          <span>💡 {viewMode === "daily" ? "คลิกป้ายกำกับเพื่อเปิด/ปิดประเภทงาน หรือชี้แท่งกราฟเพื่อดูรายละเอียด" : "คลิกจุดบนกราฟเพื่อเจาะลึกเป็นแผนภูมิแท่งรายวัน"}</span>
+        <div className="text-[12px] text-[#64748b] flex items-center gap-1.5 font-normal">
+          <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <span>{viewMode === "daily" ? "คลิกป้ายกำกับเพื่อเปิด/ปิดประเภทงาน หรือชี้แท่งกราฟเพื่อดูรายละเอียด" : "คลิกจุดบนกราฟเพื่อเจาะลึกเป็นแผนภูมิแท่งรายวัน"}</span>
         </div>
       </div>
     </div>

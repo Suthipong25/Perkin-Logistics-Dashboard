@@ -31,7 +31,7 @@ import {
   daysOpen,
   isOpen,
 } from "@/lib/dashboard-helpers";
-import { Search, Layers } from "lucide-react";
+import { Search, Layers, Plane, Ship, X } from "lucide-react";
 
 /* ============================================================================
  * PROPS INTERFACE
@@ -434,7 +434,7 @@ export default function JobsTable({
             }`}
           >
             <option value="all">
-              🏢 ผู้นำเข้า/ส่งออกทั้งหมด ({customerOptions.length})
+              ผู้นำเข้า / ส่งออกทั้งหมด ({customerOptions.length})
             </option>
             {customerOptions.map((c) => (
               <option key={c.name} value={c.name}>
@@ -446,8 +446,9 @@ export default function JobsTable({
 
         {/* ป้ายแสดงสถานะตัวกรองผู้นำเข้า/ส่งออก พร้อมปุ่มล้าง */}
         {customerFilter !== "all" && (
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#e0f2fe] border border-[#bae6fd] text-xs font-semibold text-[#0369a1]">
-            <span className="truncate max-w-[160px]" title={customerFilter}>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 text-xs font-medium text-slate-800">
+            <span className="text-slate-500 text-[11px]">ลูกค้า:</span>
+            <span className="font-semibold truncate max-w-[180px]" title={customerFilter}>
               {customerFilter}
             </span>
             <button
@@ -456,10 +457,11 @@ export default function JobsTable({
                 setCustomerFilter("all");
                 setPageNum(1);
               }}
-              title="ยกเลิกตัวกรองผู้นำเข้า/ส่งออก"
-              className="w-4 h-4 rounded-full hover:bg-[#bae6fd] flex items-center justify-center text-[#0369a1] text-xs font-bold cursor-pointer"
+              title="ยกเลิกตัวกรองลูกค้า"
+              aria-label="ยกเลิกตัวกรองลูกค้า"
+              className="w-4 h-4 rounded hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
             >
-              ×
+              <X className="w-3 h-3" />
             </button>
           </div>
         )}
@@ -754,7 +756,11 @@ export default function JobsTable({
                       <div className="font-semibold text-[#102238] truncate">{j.containerType || "—"}</div>
                       {j.carrier && (
                         <div className="text-[11px] font-semibold text-[#073766] truncate mt-0.5 flex items-center gap-1" title={j.carrier}>
-                          <span>{j.service?.includes("AIR") ? "✈️" : "🚢"}</span>
+                          {j.service?.includes("AIR") ? (
+                            <Plane className="w-3 h-3 text-sky-600 shrink-0" />
+                          ) : (
+                            <Ship className="w-3 h-3 text-slate-500 shrink-0" />
+                          )}
                           <span className="truncate">{j.carrier}</span>
                         </div>
                       )}

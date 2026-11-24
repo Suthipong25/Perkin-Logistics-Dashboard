@@ -242,7 +242,7 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
             {stats.services.map((sv) => {
               return (
                 <div key={sv.key} className="space-y-1.5">
-                  <div className="grid grid-cols-[136px_1fr_84px] items-center gap-3.5">
+                  <div className="grid grid-cols-[136px_1fr_72px] items-center gap-3.5">
                     <div>
                       <div className="text-[15px] font-bold text-[#102238] leading-tight">
                         {sv.name}
@@ -252,44 +252,78 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
                       </div>
                     </div>
 
-                    {/* Progress Bar เรียง: Booking Request -> Control -> Waiting -> Complete */}
-                    <div className="h-3 rounded-full bg-[#eef2f6] flex overflow-hidden shadow-2xs">
-                      {/* 1. Job Booking Request */}
-                      <div
-                        style={{
-                          width: `${pct(sv.booking, sv.total)}%`,
-                          backgroundColor: "#8b5cf6",
-                        }}
-                        className="transition-[width] duration-500 ease-out"
-                        title={`Job Booking Request: ${sv.booking} งาน`}
-                      />
-                      {/* 2. Job Control */}
-                      <div
-                        style={{
-                          width: `${pct(sv.control, sv.total)}%`,
-                          backgroundColor: "#0284c7",
-                        }}
-                        className="transition-[width] duration-500 ease-out"
-                        title={`Job Control: ${sv.control} งาน`}
-                      />
-                      {/* 3. Job Waiting */}
-                      <div
-                        style={{
-                          width: `${pct(sv.waiting, sv.total)}%`,
-                          backgroundColor: "#f56a22",
-                        }}
-                        className="transition-[width] duration-500 ease-out"
-                        title={`Job Waiting: ${sv.waiting} งาน`}
-                      />
-                      {/* 4. Job Complete */}
-                      <div
-                        style={{
-                          width: `${pct(sv.completed, sv.total)}%`,
-                          backgroundColor: "#0d7a5f",
-                        }}
-                        className="transition-[width] duration-500 ease-out"
-                        title={`Job Complete: ${sv.completed} งาน`}
-                      />
+                    <div className="space-y-1.5 min-w-0">
+                      {/* Progress Bar เรียง: Booking Request -> Control -> Waiting -> Complete */}
+                      <div className="h-3 rounded-full bg-[#eef2f6] flex overflow-hidden shadow-2xs">
+                        {/* 1. Job Booking Request */}
+                        <div
+                          style={{
+                            width: `${pct(sv.booking, sv.total)}%`,
+                            backgroundColor: "#8b5cf6",
+                          }}
+                          className="transition-[width] duration-500 ease-out"
+                          title={`Job Booking Request: ${sv.booking} งาน`}
+                        />
+                        {/* 2. Job Control */}
+                        <div
+                          style={{
+                            width: `${pct(sv.control, sv.total)}%`,
+                            backgroundColor: "#0284c7",
+                          }}
+                          className="transition-[width] duration-500 ease-out"
+                          title={`Job Control: ${sv.control} งาน`}
+                        />
+                        {/* 3. Job Waiting */}
+                        <div
+                          style={{
+                            width: `${pct(sv.waiting, sv.total)}%`,
+                            backgroundColor: "#f56a22",
+                          }}
+                          className="transition-[width] duration-500 ease-out"
+                          title={`Job Waiting: ${sv.waiting} งาน`}
+                        />
+                        {/* 4. Job Complete */}
+                        <div
+                          style={{
+                            width: `${pct(sv.completed, sv.total)}%`,
+                            backgroundColor: "#0d7a5f",
+                          }}
+                          className="transition-[width] duration-500 ease-out"
+                          title={`Job Complete: ${sv.completed} งาน`}
+                        />
+                      </div>
+
+                      {/* Sub-labels เรียง: Booking -> Control -> Waiting -> Complete */}
+                      <div className="flex items-center justify-between text-[11px] font-medium font-mono tabular-nums px-0.5">
+                        <span
+                          className="text-[#6d28d9] inline-flex items-center gap-1"
+                          title={`Job Booking Request: ${sv.booking} งาน`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6]" />
+                          {fmtNum(sv.booking)} Booking
+                        </span>
+                        <span
+                          className="text-[#0284c7] inline-flex items-center gap-1"
+                          title={`Job Control: ${sv.control} งาน`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
+                          {fmtNum(sv.control)} Control
+                        </span>
+                        <span
+                          className="text-[#c2410c] inline-flex items-center gap-1"
+                          title={`Job Waiting: ${sv.waiting} งาน`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#f56a22]" />
+                          {fmtNum(sv.waiting)} Waiting
+                        </span>
+                        <span
+                          className="text-[#0d7a5f] inline-flex items-center gap-1"
+                          title={`Job Complete: ${sv.completed} งาน`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#0d7a5f]" />
+                          {fmtNum(sv.completed)} Complete
+                        </span>
+                      </div>
                     </div>
 
                     <div className="text-right">
@@ -298,38 +332,6 @@ export function ServiceBreakdown({ monthFilter, stats }: ServiceBreakdownProps) 
                       </span>
                       <span className="text-[11.5px] text-[#6e7e91] ml-1">งาน</span>
                     </div>
-                  </div>
-
-                  {/* Sub-labels เรียง: Booking -> Control -> Waiting -> Complete */}
-                  <div className="flex items-center justify-between text-[11px] font-medium pl-[148px] pr-1">
-                    <span
-                      className="text-[#6d28d9] inline-flex items-center gap-1"
-                      title={`Job Booking Request: ${sv.booking} งาน`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6]" />
-                      {fmtNum(sv.booking)} Booking
-                    </span>
-                    <span
-                      className="text-[#0284c7] inline-flex items-center gap-1"
-                      title={`Job Control: ${sv.control} งาน`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7]" />
-                      {fmtNum(sv.control)} Control
-                    </span>
-                    <span
-                      className="text-[#c2410c] inline-flex items-center gap-1"
-                      title={`Job Waiting: ${sv.waiting} งาน`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#f56a22]" />
-                      {fmtNum(sv.waiting)} Waiting
-                    </span>
-                    <span
-                      className="text-[#0d7a5f] inline-flex items-center gap-1"
-                      title={`Job Complete: ${sv.completed} งาน`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#0d7a5f]" />
-                      {fmtNum(sv.completed)} Complete
-                    </span>
                   </div>
                 </div>
               );

@@ -11,17 +11,6 @@ import {
   daysOpen,
 } from "@/lib/dashboard-helpers";
 
-function getInferredCause(j: JobRecord): string {
-  const s = (j.statusDetail || j.status || "").toLowerCase();
-  if (s.includes("booking") || s.includes("request")) {
-    return "รอยืนยันบุ๊คกิ้ง / จองระวาง";
-  }
-  if (s.includes("wait")) {
-    return "รอเอกสารปล่อยสินค้า / ตรวจปล่อย รอเตรียมเอกสารวางบิล";
-  }
-  return "กำลังดำเนินการ";
-}
-
 interface OverdueJobsTableProps {
   monthFilter: string;
   setMonthFilter: (m: string) => void;
@@ -174,21 +163,14 @@ export function OverdueJobsTable({
                     </td>
                     <td
                       className="py-3 px-4 max-w-[240px] truncate text-xs text-[#526275]"
-                      title={
-                        j.updateStatus ||
-                        j.remark ||
-                        `สาเหตุอัตโนมัติ: ${getInferredCause(j)} (คลิกเพื่อระบุสาเหตุจริง)`
-                      }
+                      title={j.updateStatus || j.remark || "คลิกเพื่อเปิด Drawer ระบุสถานะ/หมายเหตุ"}
                     >
                       {j.updateStatus || j.remark ? (
                         <span className="text-[#102238] font-medium">
                           {j.updateStatus || j.remark}
                         </span>
                       ) : (
-                        <span className="text-amber-800/80 italic inline-flex items-center gap-1 group-hover:text-[#f56a22]">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                          {getInferredCause(j)}
-                        </span>
+                        <span className="text-slate-400 font-mono">—</span>
                       )}
                     </td>
                     <td className="py-3 px-3 text-right whitespace-nowrap">
