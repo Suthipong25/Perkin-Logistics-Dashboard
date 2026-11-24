@@ -121,6 +121,8 @@ export default function JobsTable({
   const [q, setQ] = useState("");
   // กรองตามบริการ ("all" หรือชื่อบริการ)
   const [serviceFilter, setServiceFilter] = useState<string>("all");
+  // กรองตามผู้นำเข้า / ส่งออก ("all" หรือชื่อบริษัท)
+  const [customerFilter, setCustomerFilter] = useState<string>("all");
   // กรองตามสถานะ ("all", "Control", "Waiting", "Completed", "Cancelled")
   const [statusFilter, setStatusFilter] = useState<string>("all");
   // กรองตามขั้นตอนพิธีการศุลกากร ("all", "0109", "0209", "0309", "0409")
@@ -132,8 +134,32 @@ export default function JobsTable({
   const pageSize = 25;
 
   /* ==========================================================================
+   * 1.0 CUSTOMER / IMPORTER OPTIONS (MEMOIZED)
+   * รายชื่อผู้นำเข้า / ส่งออกตามบริบทเดือนและบริการที่เลือก
+   * ========================================================================== */
+  const customerOptions = useMemo(() => {
+    let baseList = jobs;
+    if (monthFilter !== "all") {
+      baseList = baseList.filter((j) => getJobMonth(j) === monthFilter);
+    }
+    if (serviceFilter !== "all") {
+      baseList = baseList.filter((j) => j.service === serviceFilter);
+    }
+    const map = new Map<string, number>();
+    for (const j of baseList) {
+      const c = (j.consignee || j.customer || "").trim();
+      if (c) {
+        map.set(c, (map.get(c) || 0) + 1);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name, "th"));
+  }, [jobs, monthFilter, serviceFilter]);
+
+  /* ==========================================================================
    * 1.1 FWD SYSTEM STATUS COUNTS (MEMOIZED)
-   * คำนวณจำนวนงานในแต่ละสถานะ FWD System ตามบริบทเดือนและบริการที่เลือก
+   * คำนวณจำนวนงานในแต่ละสถานะ FWD System ตามบริบทเดือน บริการ และลูกค้าที่เลือก
    * Flow: Job Booking Request > Job Control > Job Waiting > Job Complete
    * ========================================================================== */
   const fwdCounts = useMemo(() => {
@@ -143,6 +169,14 @@ export default function JobsTable({
     }
     if (serviceFilter !== "all") {
       baseList = baseList.filter((j) => j.service === serviceFilter);
+    }
+    if (customerFilter !== "all") {
+      const target = customerFilter.trim().toLowerCase();
+      baseList = baseList.filter((j) => {
+        const c1 = (j.consignee || "").trim().toLowerCase();
+        const c2 = (j.customer || "").trim().toLowerCase();
+        return c1 === target || c2 === target;
+      });
     }
 
     const counts: Record<string, number> = {
@@ -192,6 +226,16 @@ export default function JobsTable({
     // 2.2 กรองตามกลุ่มบริการ
     if (serviceFilter !== "all") {
       list = list.filter((j) => j.service === serviceFilter);
+    }
+
+    // 2.2.1 กรองตามผู้นำเข้า / ส่งออก (Importer / Customer)
+    if (customerFilter !== "all") {
+      const target = customerFilter.trim().toLowerCase();
+      list = list.filter((j) => {
+        const c1 = (j.consignee || "").trim().toLowerCase();
+        const c2 = (j.customer || "").trim().toLowerCase();
+        return c1 === target || c2 === target;
+      });
     }
 
     // 2.3 กรองตามสถานะ (Job Booking Request > Job Control > Job Waiting > Job Complete)
@@ -294,7 +338,7 @@ export default function JobsTable({
     });
 
     return list;
-  }, [jobs, monthFilter, serviceFilter, statusFilter, customsFilter, overdueOnly, q]);
+  }, [jobs, monthFilter, serviceFilter, customerFilter, statusFilter, customsFilter, overdueOnly, q]);
 
   // คำนวณจำนวนหน้าทั้งหมด
   const totalPages = Math.max(1, Math.ceil(filteredJobs.length / pageSize));
@@ -373,6 +417,52 @@ export default function JobsTable({
             </option>
           ))}
         </select>
+
+        {/* ดรอปดาวน์กรองผู้นำเข้า / ส่งออก */}
+        <div className="relative">
+          <select
+            value={customerFilter}
+            onChange={(e) => {
+              setCustomerFilter(e.target.value);
+              setPageNum(1);
+            }}
+            aria-label="กรองตามผู้นำเข้า / ส่งออก"
+            className={`h-9 px-3 max-w-[260px] rounded-lg border text-xs font-medium outline-none truncate transition-colors cursor-pointer ${
+              customerFilter !== "all"
+                ? "border-[#0284c7] bg-[#f0f9ff] text-[#0369a1] font-semibold ring-1 ring-[#0284c7]"
+                : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 focus:border-[#073766]"
+            }`}
+          >
+            <option value="all">
+              🏢 ผู้นำเข้า/ส่งออกทั้งหมด ({customerOptions.length})
+            </option>
+            {customerOptions.map((c) => (
+              <option key={c.name} value={c.name}>
+                {c.name} ({c.count})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* ป้ายแสดงสถานะตัวกรองผู้นำเข้า/ส่งออก พร้อมปุ่มล้าง */}
+        {customerFilter !== "all" && (
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#e0f2fe] border border-[#bae6fd] text-xs font-semibold text-[#0369a1]">
+            <span className="truncate max-w-[160px]" title={customerFilter}>
+              {customerFilter}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setCustomerFilter("all");
+                setPageNum(1);
+              }}
+              title="ยกเลิกตัวกรองผู้นำเข้า/ส่งออก"
+              className="w-4 h-4 rounded-full hover:bg-[#bae6fd] flex items-center justify-center text-[#0369a1] text-xs font-bold cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* ดรอปดาวน์กรองสถานะ */}
         <select
@@ -511,7 +601,19 @@ export default function JobsTable({
             <tr className="bg-[#f0f4f8] border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap">
               <th className="py-3 px-4">Job No</th>
               <th className="py-3 px-3">บริการ</th>
-              <th className="py-3 px-4">ผู้นำเข้า / ส่งออก (Importer / Customer)</th>
+              <th className="py-3 px-4">
+                <div className="flex items-center gap-1.5">
+                  <span>ผู้นำเข้า / ส่งออก (Importer / Customer)</span>
+                  {customerFilter !== "all" && (
+                    <span
+                      className="px-1.5 py-0.2 rounded bg-[#0369a1] text-white text-[10px] font-mono font-bold"
+                      title={`กำลังกรองเฉพาะ: ${customerFilter}`}
+                    >
+                      กรองอยู่
+                    </span>
+                  )}
+                </div>
+              </th>
               <th className="py-3 px-3">สถานะ</th>
               <th className="py-3 px-3">B/L No. (MBL / HBL)</th>
               <th className="py-3 px-3">Invoice No</th>
@@ -570,9 +672,24 @@ export default function JobsTable({
 
                     {/* Trader / Customer */}
                     <td className="py-3 px-4 max-w-[260px]">
-                      <div className="font-semibold text-slate-900 truncate">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCustomerFilter(
+                            mainTrader === customerFilter ? "all" : mainTrader
+                          );
+                          setPageNum(1);
+                        }}
+                        title={`คลิกเพื่อกรองเฉพาะ: ${mainTrader}`}
+                        className={`font-semibold truncate block text-left transition-colors cursor-pointer w-full ${
+                          customerFilter === mainTrader
+                            ? "text-[#0284c7] underline decoration-[#0284c7] decoration-2"
+                            : "text-slate-900 hover:text-[#0284c7] hover:underline"
+                        }`}
+                      >
                         {mainTrader}
-                      </div>
+                      </button>
                       {showSubCust && (
                         <div className="text-[11.5px] text-[#6e7e91] truncate">
                           Agent: {j.customer}
