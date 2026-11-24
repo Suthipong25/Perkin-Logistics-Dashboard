@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getJobs, updateJobInMemory } from "@/lib/data-store";
-import { updateJobInPostgres } from "@/lib/db";
+import { updateJobInPostgres, fetchJobsFromPostgres } from "@/lib/db";
 
 const SHEET_COLUMN_MAP: Record<
   string,
@@ -99,7 +99,13 @@ export async function GET(
 ) {
   const jobNo = decodeURIComponent(params.jobNo);
   const currentJobs = getJobs();
-  const currentJob = currentJobs.find((j) => j.jobNo === jobNo);
+  let currentJob = currentJobs.find((j) => j.jobNo === jobNo);
+  if (!currentJob) {
+    const pgJobs = await fetchJobsFromPostgres();
+    if (pgJobs) {
+      currentJob = pgJobs.find((j) => j.jobNo === jobNo);
+    }
+  }
   if (!currentJob) {
     return NextResponse.json({ error: "ไม่พบหมายเลขงานนี้" }, { status: 404 });
   }
@@ -113,9 +119,15 @@ export async function PATCH(
   const jobNo = decodeURIComponent(params.jobNo);
   const body = await req.json();
 
-  // 1. ตรวจสอบว่ามีหมายเลขงานอยู่ในระบบหรือไม่
+  // 1. ตรวจสอบว่ามีหมายเลขงานอยู่ในระบบหรือไม่ (ตรวจสอบทั้งหน่วยความจำและฐานข้อมูล Supabase)
   const currentJobs = getJobs();
-  const currentJob = currentJobs.find((j) => j.jobNo === jobNo);
+  let currentJob = currentJobs.find((j) => j.jobNo === jobNo);
+  if (!currentJob) {
+    const pgJobs = await fetchJobsFromPostgres();
+    if (pgJobs) {
+      currentJob = pgJobs.find((j) => j.jobNo === jobNo);
+    }
+  }
   if (!currentJob) {
     return NextResponse.json({ error: "ไม่พบหมายเลขงานนี้" }, { status: 404 });
   }
@@ -222,18 +234,24 @@ export async function PATCH(
   });
 
   // 6. Direct sync to Supabase PostgreSQL (functions in Node.js serverless & local)
-  await updateJobInPostgres(jobNo, {
+  const dbSynced = await updateJobInPostgres(jobNo, {
     ...sanitizedPatch,
     version: nextVersion,
   });
+
+  const finalJob = updated || {
+    ...currentJob,
+    ...sanitizedPatch,
+    version: nextVersion,
+  };
 
   return NextResponse.json({
     ok: true,
     editId,
     syncedToExcel: true,
     syncedViaN8n,
-    syncedToDb: true,
-    job: updated,
+    syncedToDb: dbSynced,
+    job: finalJob,
     version: nextVersion,
   });
 }
