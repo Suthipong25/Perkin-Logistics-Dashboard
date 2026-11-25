@@ -53,6 +53,12 @@ export interface TrendChartProps {
   activeMonth: string;
   /** ฟังก์ชันเปลี่ยนเดือนที่เลือก */
   onSelectMonth: (m: string) => void;
+  /** โหมดกราฟเล็ก: ซ่อนแถบควบคุม/legend และแสดงเป็นแผนภูมิแท่งเสมอ */
+  compact?: boolean;
+  /** หัวข้อกราฟ (ใช้ในโหมด compact) */
+  title?: string;
+  /** สีประจำกราฟ (ใช้ในโหมด compact) */
+  accent?: string;
 }
 
 export type SeriesKey =
@@ -84,7 +90,7 @@ interface SeriesMeta {
  * 6. Freight
  * และตามด้วย งานรวมทั้งหมด (Total)
  */
-const SERIES_LIST: SeriesMeta[] = [
+export const SERIES_LIST: SeriesMeta[] = [
   { key: "seaImport", label: "SEA Import", sub: "เรือขาเข้า", color: "#0284c7", strokeWidth: 2.4, labelOffsetY: -8 },
   { key: "seaExport", label: "SEA Export", sub: "เรือขาออก", color: "#059669", strokeWidth: 2.4, labelOffsetY: 14 },
   { key: "airImport", label: "AIR Import", sub: "แอร์ขาเข้า", color: "#8b5cf6", strokeWidth: 2.4, labelOffsetY: -8 },
@@ -99,6 +105,9 @@ export default function TrendChart({
   dailyData,
   activeMonth,
   onSelectMonth,
+  compact = false,
+  title,
+  accent = "#0c2340",
 }: TrendChartProps) {
   // โหมดการแสดงผล: "months" = กราฟเส้นรวม 12 เดือน, "daily" = แผนภูมิแท่งรายวัน วันที่ 1 - 31
   const [viewMode, setViewMode] = useState<"months" | "daily">(
@@ -149,9 +158,11 @@ export default function TrendChart({
    * pad.r = 24: ระยะขอบขวา
    * iw = 1040: พื้นที่กราฟกว้างขวาง แสดงผลคมชัด
    * ========================================================================== */
-  const W = 1120;
-  const H = 420;
-  const pad = { l: 56, r: 24, t: 36, b: 38 };
+  const W = compact ? 560 : 1120;
+  const H = compact ? 260 : 420;
+  const pad = compact ? { l: 36, r: 8, t: 20, b: 28 } : { l: 56, r: 24, t: 36, b: 38 };
+  // โหมด compact ใช้แผนภูมิแท่งทั้งรายเดือนและรายวัน (อ่านง่ายกว่าเส้นหลายเส้น)
+  const useBars = viewMode === "daily" || compact;
 
   const iw = W - pad.l - pad.r; // 1040
   const ih = H - pad.t - pad.b; // 346
@@ -163,7 +174,7 @@ export default function TrendChart({
   // ในโหมด Bar Chart รายวัน: สเกลคำนวณจากยอดสะสม (Stacked Sum) ของแต่ละวัน
   // ในโหมด Line Chart 12 เดือน: สเกลคำนวณจากค่ายอดสูงสุดของแต่ละเส้น
   const maxValInSeries = useMemo(() => {
-    if (viewMode === "daily") {
+    if (useBars) {
       return Math.max(
         1,
         ...currentData.map((d) => {
@@ -178,7 +189,7 @@ export default function TrendChart({
       1,
       ...currentData.flatMap((d) => activeSeriesKeys.map((k) => (d[k] as number) || 0))
     );
-  }, [viewMode, currentData, activeSeriesKeys, stackKeys]);
+  }, [useBars, currentData, activeSeriesKeys, stackKeys]);
 
   // คำนวณ step สเกลแกน Y ให้เป็นเลขกลมสวยงาม
   const step = useMemo(() => {
@@ -243,10 +254,21 @@ export default function TrendChart({
   }, [activeMonth, monthsData]);
 
   return (
-    <div className="flex flex-col h-full justify-between gap-4">
-      {/* --------------------------------------------------------------------
-       * TOP CONTROLS: VIEW SWITCHER & DATA LABELS TOGGLE
-       * -------------------------------------------------------------------- */}
+    <div className={`flex flex-col h-full justify-between ${compact ? "gap-2" : "gap-4"}`}>
+      {compact ? (
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />
+            <h3 className="text-[14px] font-bold text-[#0c2340]">{title}</h3>
+          </div>
+          <div className="text-xs text-slate-500">
+            <span className="font-mono font-bold text-[16px] text-[#0c2340] tabular-nums">
+              {fmtNum(seriesTotals.total + seriesTotals.transport)}
+            </span>{" "}
+            งาน
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b border-[#dce2e8]">
         {/* Toggle Mode Segmented Buttons */}
         <div className="inline-flex rounded-[8px] border border-[#c5cfd9] bg-[#f8fafc] p-0.5 text-xs font-semibold shadow-2xs">
@@ -326,25 +348,24 @@ export default function TrendChart({
           )}
         </div>
       </div>
+      )}
 
       {/* --------------------------------------------------------------------
-       * SVG CHART AREA: EXPANDED VIEW (W = 1120, H = 420)
+       * SVG CHART AREA
        * -------------------------------------------------------------------- */}
       <div className="relative my-auto select-none flex-1 flex items-center justify-center w-full">
         <svg
           viewBox={`0 0 ${W} ${H}`}
-          className="w-full h-auto min-h-[380px] max-h-[520px] overflow-visible"
+          className={`w-full h-auto overflow-visible ${compact ? "" : "min-h-[380px] max-h-[520px]"}`}
           role="img"
           aria-label={
-            viewMode === "daily"
-              ? `แผนภูมิแท่งแสดงปริมาณงานแยกตามบริการรายวัน เดือน ${selectedMonthLabel}`
+            useBars
+              ? `แผนภูมิแท่งแสดงปริมาณงาน${title ? ` ${title}` : ""} ${viewMode === "daily" ? `รายวัน เดือน ${selectedMonthLabel}` : "รายเดือน"}`
               : "กราฟแนวโน้มปริมาณงานและรถขนส่งภาพรวม 12 เดือน"
           }
           onMouseLeave={() => setHoverIndex(null)}
         >
-          {/* ------------------------------------------------------------------
-           * LEFT Y-AXIS: จำนวนงาน & HORIZONTAL GRIDLINES
-           * ------------------------------------------------------------------ */}
+          {!compact && (
           <text
             x={pad.l}
             y={pad.t - 14}
@@ -355,6 +376,7 @@ export default function TrendChart({
           >
             จำนวนงาน (Jobs)
           </text>
+          )}
 
           {/* เส้นขอบแกนซ้าย */}
           <line
@@ -423,7 +445,7 @@ export default function TrendChart({
           {/* ------------------------------------------------------------------
            * MODE 1: BAR CHART (แผนภูมิแท่ง) — แสดงเมื่อเลือกเดือนเฉพาะ (กว้างและใหญ่ขึ้น)
            * ------------------------------------------------------------------ */}
-          {viewMode === "daily" && (
+          {useBars && (
             <g id="daily-bar-chart-group">
               {currentData.map((d, i) => {
                 const barX = getBarX(i);
@@ -465,6 +487,10 @@ export default function TrendChart({
                     key={`bar-col-${d.key || i}`}
                     className="cursor-pointer"
                     onMouseEnter={() => setHoverIndex(i)}
+                    onClick={() => {
+                      // รายเดือน: คลิกแท่งเพื่อเจาะดูรายวันของเดือนนั้น
+                      if (viewMode === "months") onSelectMonth(d.key);
+                    }}
                   >
                     {/* Hover Column Background Pillar */}
                     <rect
@@ -554,7 +580,7 @@ export default function TrendChart({
           {/* ------------------------------------------------------------------
            * MODE 2: LINE CHART (กราฟเส้น) — แสดงเมื่อดูภาพรวม 12 เดือน (ขนาดใหญ่ กว้าง)
            * ------------------------------------------------------------------ */}
-          {viewMode === "months" && (
+          {!useBars && (
             <g id="months-line-chart-group">
               {/* Hover Column Guide Line */}
               {hoverIndex !== null && (
@@ -722,15 +748,13 @@ export default function TrendChart({
          * ------------------------------------------------------------------ */}
         {hoveredPoint && hoverIndex !== null && (
           <div
-            className="absolute top-2 pointer-events-none z-30 bg-[#071a2f]/95 backdrop-blur-md text-white p-3.5 rounded-[9px] shadow-2xl border border-white/15 text-xs font-sans min-w-[220px] transition-all duration-75"
+            className="absolute top-2 -translate-x-1/2 pointer-events-none z-30 bg-[#071a2f]/95 backdrop-blur-md text-white p-3.5 rounded-[9px] shadow-2xl border border-white/15 text-xs font-sans min-w-[200px]"
             style={{
+              // ตำแหน่งเป็น % ของความกว้างกราฟ เพื่อให้ตรงทั้งกราฟใหญ่และกราฟเล็ก
               left: `${Math.min(
-                Math.max(
-                  (viewMode === "daily" ? getBarCenterX(hoverIndex) : getLineX(hoverIndex)) - 110,
-                  14
-                ),
-                W - 250
-              )}px`,
+                Math.max(((useBars ? getBarCenterX(hoverIndex) : getLineX(hoverIndex)) / W) * 100, 22),
+                78
+              )}%`,
             }}
           >
             <div className="font-bold text-[13.5px] border-b border-white/15 pb-1.5 flex items-center justify-between text-[#fed7aa]">
@@ -763,6 +787,7 @@ export default function TrendChart({
       {/* --------------------------------------------------------------------
        * BOTTOM INTERACTIVE LEGEND
        * -------------------------------------------------------------------- */}
+      {!compact && (
       <div className="pt-3.5 border-t border-[#dce2e8] flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex flex-wrap items-center gap-2">
           {SERIES_LIST.map((s) => {
@@ -804,6 +829,7 @@ export default function TrendChart({
           <span>{viewMode === "daily" ? "คลิกป้ายกำกับเพื่อเปิด/ปิดประเภทงาน หรือชี้แท่งกราฟเพื่อดูรายละเอียด" : "คลิกจุดบนกราฟเพื่อเจาะลึกเป็นแผนภูมิแท่งรายวัน"}</span>
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -29,13 +29,43 @@ import {
   daysOpen,
   isOpen,
 } from "@/lib/dashboard-helpers";
-import TrendChart from "./TrendChart";
+import TrendChart, { SERIES_LIST } from "./TrendChart";
 import { Calendar } from "lucide-react";
 import {
   OverviewKpiCards,
   ServiceBreakdown,
   OverdueJobsTable,
 } from "./overview";
+
+type JobStage = "Booking" | "Control" | "Waiting" | "Completed" | "Cancelled";
+
+/** จำแนกสถานะงานตามลำดับ FWD System: Job Booking Request > Job Control > Job Waiting > Job Complete */
+function classifyJob(job: JobRecord): JobStage {
+  const st = job.status || "";
+  const std = job.statusDetail || "";
+  const raw = job.statusRaw || "";
+  if (st === "Completed" || std.includes("Complete") || raw.includes("Complete")) return "Completed";
+  if (st === "Cancelled" || std.includes("Cancel") || raw.includes("Cancel")) return "Cancelled";
+  if (
+    st === "Booking" ||
+    std.includes("Booking") ||
+    std.includes("Request") ||
+    raw.includes("Booking") ||
+    raw.includes("Request")
+  ) {
+    return "Booking";
+  }
+  if (std.includes("Wait") || raw.includes("Wait")) return "Waiting";
+  return "Control";
+}
+
+/** 4 กราฟแยกตามสถานะงาน (สีเดียวกับ Service Breakdown) */
+const STAGE_CHARTS: { key: JobStage; label: string; color: string }[] = [
+  { key: "Booking", label: "Job Booking Request", color: "#8b5cf6" },
+  { key: "Control", label: "Job Control", color: "#0284c7" },
+  { key: "Waiting", label: "Job Waiting", color: "#f56a22" },
+  { key: "Completed", label: "Job Complete", color: "#0d7a5f" },
+];
 
 export interface OverviewViewProps {
   /** รายการงานทั้งหมดจาก SharePoint / Data Store */
@@ -101,39 +131,7 @@ export default function OverviewView({
       if (isOpen(job) && age !== null && age > 0) overdue += 1;
     }
 
-    // 1.3 จำแนกสถานะงานสำหรับตาราง Matrix & Service Breakdown ตามลำดับ FWD System
-    // Flow: Job Booking Request > Job Control > Job Waiting > Job Complete
-    const classifyJob = (
-      job: JobRecord
-    ): "Booking" | "Control" | "Waiting" | "Completed" | "Cancelled" => {
-      const st = job.status || "";
-      const std = job.statusDetail || "";
-      const raw = job.statusRaw || "";
-      if (st === "Completed" || std.includes("Complete") || raw.includes("Complete")) {
-        return "Completed";
-      }
-      if (st === "Cancelled" || std.includes("Cancel") || raw.includes("Cancel")) {
-        return "Cancelled";
-      }
-      if (
-        st === "Booking" ||
-        std.includes("Booking") ||
-        std.includes("Request") ||
-        raw.includes("Booking") ||
-        raw.includes("Request")
-      ) {
-        return "Booking";
-      }
-      if (
-        std.includes("Wait") ||
-        std === "Job Waiting" ||
-        raw.includes("Wait") ||
-        raw === "Job Waiting"
-      ) {
-        return "Waiting";
-      }
-      return "Control";
-    };
+    // 1.3 จำแนกสถานะงานตามลำดับ FWD System (ดู classifyJob ด้านบน)
 
     // 1.4 สร้างรายการ 6 หมวดบริการ
     const matrixDefs = [
@@ -262,103 +260,77 @@ export default function OverviewView({
     "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."
   ];
 
-  const months12Data = useMemo(() => {
-    return Array.from({ length: 12 }, (_, idx) => {
-      const mNum = idx + 1;
-      const mKey = `2026-${String(mNum).padStart(2, "0")}`;
+  // นับงานแยกตามบริการของรายการงานที่ส่งเข้ามา
+  const countByService = (list: JobRecord[]) => {
+    const si = list.filter((j) => j.service === "SEA Import").length;
+    const se = list.filter((j) => j.service === "SEA Export").length;
+    const ai = list.filter((j) => j.service === "AIR Import").length;
+    const ae = list.filter((j) => (j.service || "").toUpperCase().includes("AIR EXP")).length;
+    const trn = list.filter((j) => j.service === "Transport").length;
+    const frt = list.filter((j) => j.service === "Freight").length;
+    return {
+      total: si + se + ai + ae + frt,
+      seaImport: si,
+      seaExport: se,
+      airImport: ai,
+      airExport: ae,
+      transport: trn,
+      freight: frt,
+      completed: list.filter((j) => j.status === "Completed").length,
+    };
+  };
 
-      const mJobs = jobs.filter((j) => getJobMonth(j) === mKey);
-      const mTransport = mJobs.filter((j) => j.service === "Transport");
+  // วันที่อ้างอิงของงาน: ขาออกใช้ ETD, ขาเข้าใช้ ETA
+  const jobDayKey = (j: JobRecord) => {
+    const s = (j.service || "").toLowerCase();
+    const jn = (j.jobNo || "").toUpperCase();
+    const isExp = s.includes("export") || /^(SH)?(SE|AE)/.test(jn);
+    const isImp = s.includes("import") || /^(SH)?(SI|AI)/.test(jn);
+    if (isExp) return j.etd || j.jobDate || "";
+    if (isImp) return j.eta || j.jobDate || j.etd || "";
+    return j.jobDate || j.etd || j.eta || "";
+  };
 
-      const si = mJobs.filter((j) => j.service === "SEA Import").length;
-      const se = mJobs.filter((j) => j.service === "SEA Export").length;
-      const ai = mJobs.filter((j) => j.service === "AIR Import").length;
-      const ae = mJobs.filter((j) => (j.service || "").toUpperCase().includes("AIR EXP")).length;
-      const trn = mTransport.length;
-      const frt = mJobs.filter((j) => j.service === "Freight").length;
-      const total = si + se + ai + ae + frt;
-
+  const buildMonths = (list: JobRecord[]) =>
+    Array.from({ length: 12 }, (_, idx) => {
+      const mKey = `2026-${String(idx + 1).padStart(2, "0")}`;
       return {
         key: mKey,
         label: THAI_MONTH_SHORT[idx],
         fullLabel: `${THAI_MONTH_NAMES[idx]} 2026`,
-        total,
-        seaImport: si,
-        seaExport: se,
-        airImport: ai,
-        airExport: ae,
-        transport: trn,
-        freight: frt,
-        completed: mJobs.filter((j) => j.status === "Completed").length,
+        ...countByService(list.filter((j) => getJobMonth(j) === mKey)),
       };
     });
-  }, [jobs]);
 
   const activeTargetMonth = monthFilter === "all" ? "2026-11" : monthFilter;
-  const dailyData = useMemo(() => {
-    const parts = activeTargetMonth.split("-");
-    const year = Number(parts[0]) || 2026;
-    const month = Number(parts[1]) || 9;
-    const daysInMonth = new Date(year, month, 0).getDate();
 
-    const monthJobs = jobs.filter((j) => getJobMonth(j) === activeTargetMonth);
-    const monthName = THAI_MONTH_SHORT[month - 1] || "";
-
+  const buildDaily = (list: JobRecord[]) => {
+    const [year, month] = activeTargetMonth.split("-").map(Number);
+    const daysInMonth = new Date(year || 2026, month || 11, 0).getDate();
+    const monthJobs = list.filter((j) => getJobMonth(j) === activeTargetMonth);
+    const monthName = THAI_MONTH_SHORT[(month || 11) - 1] || "";
     return Array.from({ length: daysInMonth }, (_, idx) => {
       const day = idx + 1;
       const dKey = `${activeTargetMonth}-${String(day).padStart(2, "0")}`;
-
-      const dayJobs = monthJobs.filter((j) => {
-        const s = (j.service || "").toLowerCase();
-        const jn = (j.jobNo || "").toUpperCase();
-        const isExp =
-          s.includes("export") ||
-          jn.startsWith("SE") ||
-          jn.startsWith("AE") ||
-          jn.startsWith("SHSE") ||
-          jn.startsWith("SHAE");
-        const isImp =
-          s.includes("import") ||
-          jn.startsWith("SI") ||
-          jn.startsWith("AI") ||
-          jn.startsWith("SHSI") ||
-          jn.startsWith("SHAI");
-        let d = "";
-        if (isExp) {
-          d = j.etd || j.jobDate || "";
-        } else if (isImp) {
-          d = j.eta || j.jobDate || j.etd || "";
-        } else {
-          d = j.jobDate || j.etd || j.eta || "";
-        }
-        return d.startsWith(dKey);
-      });
-
-      const dayTransport = dayJobs.filter((j) => j.service === "Transport");
-
-      const si = dayJobs.filter((j) => j.service === "SEA Import").length;
-      const se = dayJobs.filter((j) => j.service === "SEA Export").length;
-      const ai = dayJobs.filter((j) => j.service === "AIR Import").length;
-      const ae = dayJobs.filter((j) => (j.service || "").toUpperCase().includes("AIR EXP")).length;
-      const trn = dayTransport.length;
-      const frt = dayJobs.filter((j) => j.service === "Freight").length;
-      const total = si + se + ai + ae + frt;
-
       return {
         key: dKey,
         label: String(day),
         fullLabel: `วันที่ ${day} ${monthName} 2026`,
-        total,
-        seaImport: si,
-        seaExport: se,
-        airImport: ai,
-        airExport: ae,
-        transport: trn,
-        freight: frt,
-        completed: dayJobs.filter((j) => j.status === "Completed").length,
+        ...countByService(monthJobs.filter((j) => jobDayKey(j).startsWith(dKey))),
       };
     });
-  }, [jobs, transport, activeTargetMonth]);
+  };
+
+  // ข้อมูล 4 กราฟแยกตามสถานะงาน
+  const stageCharts = useMemo(
+    () =>
+      STAGE_CHARTS.map((s) => {
+        const list = jobs.filter((j) => classifyJob(j) === s.key);
+        return { ...s, months: buildMonths(list), daily: buildDaily(list) };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [jobs, activeTargetMonth]
+  );
 
   /* ==========================================================================
    * 2. RENDER UI
@@ -416,22 +388,43 @@ export default function OverviewView({
       {/* SECTION 3: SERVICE BREAKDOWN (สัดส่วน 6 บริการหลัก: Bars vs Matrix) */}
       <ServiceBreakdown monthFilter={monthFilter} stats={stats} />
 
-      {/* SECTION 4: MULTI-SERVICE & TRANSPORT TREND CHART */}
+      {/* SECTION 4: 4 กราฟแนวโน้มแยกตามสถานะงาน (Booking / Control / Waiting / Complete) */}
       <section className="bg-white rounded-xl border border-slate-200/90 p-5 lg:p-6 flex flex-col shadow-xs">
-        <div className="mb-4">
-          <h2 className="text-[16px] font-bold text-[#0c2340]">
-            แนวโน้มปริมาณงานขนส่ง 2026
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            วิเคราะห์ปริมาณงานชิปเมนท์และงานรถขนส่งรายเดือน และรายวัน 1–31
-          </p>
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-[16px] font-bold text-[#0c2340]">
+              แนวโน้มปริมาณงานตามสถานะ 2026
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              {monthFilter === "all"
+                ? "รายเดือน ม.ค.–ธ.ค. · คลิกแท่งเพื่อดูรายวันของเดือนนั้น"
+                : `รายวัน 1–31 · ${fmtMonth(monthFilter)}`}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-slate-600">
+            {SERIES_LIST.filter((s) => s.key !== "total").map((s) => (
+              <span key={s.key} className="inline-flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                {s.label}
+              </span>
+            ))}
+          </div>
         </div>
-        <TrendChart
-          monthsData={months12Data}
-          dailyData={dailyData}
-          activeMonth={monthFilter}
-          onSelectMonth={(m) => setMonthFilter(m)}
-        />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {stageCharts.map((s) => (
+            <div key={s.key} className="rounded-lg border border-slate-200 p-4">
+              <TrendChart
+                compact
+                title={s.label}
+                accent={s.color}
+                monthsData={s.months}
+                dailyData={s.daily}
+                activeMonth={monthFilter}
+                onSelectMonth={(m) => setMonthFilter(m)}
+              />
+            </div>
+          ))}
+        </div>
       </section>
 
       {/* SECTION 5: ACTIONABLE OVERDUE EXCEPTIONS TABLE */}
