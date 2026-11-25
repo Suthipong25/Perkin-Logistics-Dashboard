@@ -221,8 +221,8 @@ export default function JobsTable({
   const [customsFilter, setCustomsFilter] = useState<string>(initialCustomsFilter);
   // เฉพาะงานที่เลยกำหนด ETD หรือไม่
   const [overdueOnly, setOverdueOnly] = useState(initialOverdueOnly);
-  // ทิศทางการเรียงลำดับเดือนและเลขลำดับงาน ("asc" = เดือน 1->12, ลำดับ 0001->9999 | "desc" = ใหม่สุดขึ้นก่อน)
-  const [jobSortDir, setJobSortDir] = useState<"asc" | "desc">("asc");
+  // ทิศทางการเรียงลำดับเดือนและเลขลำดับงาน ("desc" = ใหม่ไปเก่า ค่าเริ่มต้น | "asc" = เก่าไปใหม่)
+  const [jobSortDir, setJobSortDir] = useState<"asc" | "desc">("desc");
   // หน้าปัจจุบัน
   const [pageNum, setPageNum] = useState(1);
   const pageSize = 25;
@@ -403,11 +403,11 @@ export default function JobsTable({
       const pa = parseJobNo(a.jobNo);
       const pb = parseJobNo(b.jobNo);
       if (pa.prefixRank !== pb.prefixRank) return pa.prefixRank - pb.prefixRank;
-      if (pa.prefix !== pb.prefix) return pa.prefix.localeCompare(pb.prefix);
       if (pa.year !== pb.year) return (pa.year - pb.year) * dir;
       if (pa.month !== pb.month) return (pa.month - pb.month) * dir;
       if (pa.seq !== pb.seq) return (pa.seq - pb.seq) * dir;
-      return String(a.jobNo || "").localeCompare(String(b.jobNo || ""));
+      if (pa.prefix !== pb.prefix) return pb.prefix.localeCompare(pa.prefix);
+      return String(b.jobNo || "").localeCompare(String(a.jobNo || ""));
     });
 
     return list;
