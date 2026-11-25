@@ -436,7 +436,7 @@ export default function JobsTable({
    * 3. RENDER UI
    * ========================================================================== */
   return (
-    <section className="bg-white rounded-[12px] border border-[#dce2e8] overflow-hidden shadow-xs">
+    <section className="bg-white rounded-[12px] border border-[#dce2e8] shadow-xs">
       {/* --------------------------------------------------------------------
        * TOOLBAR: ค้นหา, กรองบริการ, กรองเดือน, กรองสถานะ, และกรองงานเกินกำหนด
        * -------------------------------------------------------------------- */}
@@ -521,7 +521,7 @@ export default function JobsTable({
           </button>
 
           {monthDropdownOpen && (
-            <div className="absolute left-0 top-full mt-1.5 z-40 w-[240px] rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden">
+            <div className="absolute left-0 top-full mt-1.5 z-50 w-[300px] max-w-[90vw] rounded-lg border border-slate-200 bg-white shadow-xl overflow-hidden">
               <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between text-[11px]">
                 <span className="text-slate-500 font-medium">
                   เลือกได้หลายเดือน ({selectedMonths.length}/{monthOptions.length})
@@ -541,16 +541,20 @@ export default function JobsTable({
                 )}
               </div>
 
-              <div className="max-h-[300px] overflow-y-auto divide-y divide-slate-50 p-1" role="listbox" aria-multiselectable="true">
+              <div
+                className="grid grid-cols-2 gap-1 p-2"
+                role="listbox"
+                aria-multiselectable="true"
+              >
                 {monthOptions.map((m) => {
                   const checked = selectedMonths.includes(m.key);
                   return (
                     <label
                       key={m.key}
-                      className={`flex items-center justify-between gap-2 px-2.5 py-2 rounded-md text-xs cursor-pointer select-none transition-colors ${
+                      className={`flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-md text-xs cursor-pointer select-none border transition-colors ${
                         checked
-                          ? "bg-[#f0f9ff] text-[#0369a1] font-semibold"
-                          : "text-slate-700 hover:bg-slate-50"
+                          ? "bg-[#f0f9ff] border-[#bae6fd] text-[#0369a1] font-semibold"
+                          : "border-transparent text-slate-700 hover:bg-slate-50"
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -611,7 +615,7 @@ export default function JobsTable({
           </button>
 
           {customerDropdownOpen && (
-            <div className="absolute left-0 top-full mt-1.5 z-40 w-[330px] max-w-[90vw] rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden">
+            <div className="absolute left-0 top-full mt-1.5 z-50 w-[330px] max-w-[90vw] rounded-lg border border-slate-200 bg-white shadow-xl overflow-hidden">
               <div className="p-2 border-b border-slate-100 bg-slate-50/70 space-y-1.5">
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -1059,7 +1063,7 @@ export default function JobsTable({
       {/* --------------------------------------------------------------------
        * PAGINATION TOOLBAR: สลับหน้าข้อมูล
        * -------------------------------------------------------------------- */}
-      <div className="px-4 py-3 border-t border-[#dce2e8] flex items-center justify-between text-[13px] text-[#526275]">
+      <div className="px-4 py-3 border-t border-[#dce2e8] rounded-b-[12px] flex items-center justify-between text-[13px] text-[#526275]">
         <span>
           หน้า <b className="text-[#102238]">{pageNum}</b> จาก {totalPages}
         </span>
