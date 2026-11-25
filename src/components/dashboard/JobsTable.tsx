@@ -32,7 +32,38 @@ import {
   isOpen,
   classifyJob,
 } from "@/lib/dashboard-helpers";
-import { Search, Layers, Plane, Ship, X, ChevronDown, Check } from "lucide-react";
+import { Search, Layers, Plane, Ship, X, ChevronDown, Check, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+
+const JOB_PREFIX_ORDER: Record<string, number> = {
+  SHAI: 1,
+  AI: 1,
+  SHSE: 2,
+  SE: 2,
+  SHSI: 3,
+  SI: 3,
+  SHAE: 4,
+  AE: 4,
+  SHT: 5,
+  TS: 5,
+};
+
+/**
+ * แยกโครงสร้างรหัสงาน (เช่น SHAI26110027 -> Prefix: SHAI, ปี: 26, เดือน: 11, ลำดับงาน: 27)
+ */
+function parseJobNo(jobNo: string) {
+  const m = String(jobNo || "").trim().match(/^([A-Z]+)(\d{2})(\d{2})(\d+)$/i);
+  if (!m) {
+    return { prefixRank: 99, prefix: jobNo || "", year: 0, month: 0, seq: 0 };
+  }
+  const prefix = m[1].toUpperCase();
+  return {
+    prefixRank: JOB_PREFIX_ORDER[prefix] ?? 50,
+    prefix,
+    year: Number(m[2]),
+    month: Number(m[3]),
+    seq: Number(m[4]),
+  };
+}
 
 /* ============================================================================
  * PROPS INTERFACE
@@ -185,6 +216,8 @@ export default function JobsTable({
   const [customsFilter, setCustomsFilter] = useState<string>(initialCustomsFilter);
   // เฉพาะงานที่เลยกำหนด ETD หรือไม่
   const [overdueOnly, setOverdueOnly] = useState(initialOverdueOnly);
+  // ทิศทางการเรียงลำดับเลขงาน ("asc" = 0001 -> 1000, "desc" = 1000 -> 0001)
+  const [jobSortDir, setJobSortDir] = useState<"asc" | "desc">("asc");
   // หน้าปัจจุบัน
   const [pageNum, setPageNum] = useState(1);
   const pageSize = 25;
@@ -355,22 +388,23 @@ export default function JobsTable({
       );
     }
 
-    // 2.7 เรียงลำดับ: งานที่ยังทำอยู่ขึ้นก่อน (In Progress -> Booking -> Completed -> Cancelled)
-    // ตามด้วยเรียงวันที่ ETD ล่าสุดลงมา
-    const prio: Record<string, number> = {
-      "In Progress": 0,
-      Booking: 1,
-      Completed: 2,
-      Cancelled: 3,
-    };
+    // 2.7 เรียงลำดับตามโครงสร้าง JOB NO:
+    //     1) หมวดรหัสงาน: SHAI -> SHSE -> SHSI -> SHAE
+    //     2) ปี ค.ศ. (YY) -> เดือน (MM) -> ลำดับงาน (0001 -> 1000)
+    const dir = jobSortDir === "asc" ? 1 : -1;
     list.sort((a, b) => {
-      const p = (prio[a.status] ?? 9) - (prio[b.status] ?? 9);
-      if (p !== 0) return p;
-      return String(b.etd || "").localeCompare(String(a.etd || ""));
+      const pa = parseJobNo(a.jobNo);
+      const pb = parseJobNo(b.jobNo);
+      if (pa.prefixRank !== pb.prefixRank) return pa.prefixRank - pb.prefixRank;
+      if (pa.prefix !== pb.prefix) return pa.prefix.localeCompare(pb.prefix);
+      if (pa.year !== pb.year) return (pa.year - pb.year) * dir;
+      if (pa.month !== pb.month) return (pa.month - pb.month) * dir;
+      if (pa.seq !== pb.seq) return (pa.seq - pb.seq) * dir;
+      return String(a.jobNo || "").localeCompare(String(b.jobNo || "")) * dir;
     });
 
     return list;
-  }, [jobs, selectedMonths, serviceFilter, selectedCustomers, statusFilter, customsFilter, overdueOnly, q]);
+  }, [jobs, selectedMonths, serviceFilter, selectedCustomers, statusFilter, customsFilter, overdueOnly, q, jobSortDir]);
 
   // คำนวณจำนวนหน้าทั้งหมด
   const totalPages = Math.max(1, Math.ceil(filteredJobs.length / pageSize));
@@ -812,7 +846,31 @@ export default function JobsTable({
         <table className="w-full text-left border-collapse min-w-[980px]">
           <thead>
             <tr className="bg-[#f0f4f8] border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap">
-              <th className="py-3 px-4">Job No</th>
+              <th className="py-3 px-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setJobSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                    setPageNum(1);
+                  }}
+                  title={
+                    jobSortDir === "asc"
+                      ? "กำลังเรียง SHAI → SHSE → SHSI → SHAE และลำดับ 0001 → 1000 (คลิกเพื่อสลับเป็นมากไปน้อย)"
+                      : "กำลังเรียง SHAI → SHSE → SHSI → SHAE และลำดับ 1000 → 0001 (คลิกเพื่อสลับเป็นน้อยไปมาก)"
+                  }
+                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                >
+                  <span>Job No</span>
+                  {jobSortDir === "asc" ? (
+                    <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                  ) : (
+                    <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                  )}
+                  <span className="font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[#073766] normal-case tracking-normal">
+                    {jobSortDir === "asc" ? "0001→9999" : "9999→0001"}
+                  </span>
+                </button>
+              </th>
               <th className="py-3 px-3">บริการ</th>
               <th className="py-3 px-4">
                 <span>ผู้นำเข้า / ส่งออก (Importer / Customer)</span>
