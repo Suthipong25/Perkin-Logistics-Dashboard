@@ -34,7 +34,11 @@ import {
 } from "@/lib/dashboard-helpers";
 import { Search, Layers, Plane, Ship, X, ChevronDown, Check, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 
-const JOB_PREFIX_ORDER: Record<string, number> = {
+/**
+ * ลำดับกลุ่มหมวดงานตามที่ผู้ใช้งานกำหนด: SHAI -> SHSE -> SHSI -> SHAE -> อื่นๆ
+ * (รองรับรหัสย่อ AI, SE, SI, AE ให้จัดเข้าหมวดเดียวกัน)
+ */
+const PREFIX_ORDER: Record<string, number> = {
   SHAI: 1,
   AI: 1,
   SHSE: 2,
@@ -48,20 +52,21 @@ const JOB_PREFIX_ORDER: Record<string, number> = {
 };
 
 /**
- * แยกโครงสร้างรหัสงาน (เช่น SHAI26110027 -> Prefix: SHAI, ปี: 26, เดือน: 11, ลำดับงาน: 27)
+ * แยกองค์ประกอบรหัสงาน เช่น "SHAI26010001" -> { prefixRank: 1, prefix: "SHAI", year: 26, month: 1, seq: 1 }
  */
-function parseJobNo(jobNo: string) {
-  const m = String(jobNo || "").trim().match(/^([A-Z]+)(\d{2})(\d{2})(\d+)$/i);
+function parseJobNo(jobNo: string | undefined) {
+  const raw = String(jobNo || "").trim().toUpperCase();
+  const m = raw.match(/^([A-Z]+)(\d{2})(\d{2})(\d+)$/);
   if (!m) {
-    return { prefixRank: 99, prefix: jobNo || "", year: 0, month: 0, seq: 0 };
+    return { prefixRank: 99, prefix: raw, year: 99, month: 99, seq: 999999 };
   }
-  const prefix = m[1].toUpperCase();
+  const prefix = m[1];
   return {
-    prefixRank: JOB_PREFIX_ORDER[prefix] ?? 50,
+    prefixRank: PREFIX_ORDER[prefix] ?? 90,
     prefix,
-    year: Number(m[2]),
-    month: Number(m[3]),
-    seq: Number(m[4]),
+    year: parseInt(m[2], 10),
+    month: parseInt(m[3], 10),
+    seq: parseInt(m[4], 10),
   };
 }
 
@@ -216,7 +221,7 @@ export default function JobsTable({
   const [customsFilter, setCustomsFilter] = useState<string>(initialCustomsFilter);
   // เฉพาะงานที่เลยกำหนด ETD หรือไม่
   const [overdueOnly, setOverdueOnly] = useState(initialOverdueOnly);
-  // ทิศทางการเรียงลำดับเลขงาน ("asc" = 0001 -> 1000, "desc" = 1000 -> 0001)
+  // ทิศทางการเรียงลำดับเดือนและเลขลำดับงาน ("asc" = เดือน 1->12, ลำดับ 0001->9999 | "desc" = ใหม่สุดขึ้นก่อน)
   const [jobSortDir, setJobSortDir] = useState<"asc" | "desc">("asc");
   // หน้าปัจจุบัน
   const [pageNum, setPageNum] = useState(1);
@@ -388,9 +393,11 @@ export default function JobsTable({
       );
     }
 
-    // 2.7 เรียงลำดับตามโครงสร้าง JOB NO:
-    //     1) หมวดรหัสงาน: SHAI -> SHSE -> SHSI -> SHAE
-    //     2) ปี ค.ศ. (YY) -> เดือน (MM) -> ลำดับงาน (0001 -> 1000)
+    // 2.7 เรียงลำดับตามโครงสร้างรหัสงาน (Job No):
+    //     1) หมวดงาน: SHAI -> SHSE -> SHSI -> SHAE
+    //     2) ปี ค.ศ. (เช่น 26)
+    //     3) เดือน 01 -> 12
+    //     4) ลำดับงานของเดือนนั้น 0001 -> 9999 (สลับ asc/desc ได้ที่หัวตาราง)
     const dir = jobSortDir === "asc" ? 1 : -1;
     list.sort((a, b) => {
       const pa = parseJobNo(a.jobNo);
@@ -400,7 +407,7 @@ export default function JobsTable({
       if (pa.year !== pb.year) return (pa.year - pb.year) * dir;
       if (pa.month !== pb.month) return (pa.month - pb.month) * dir;
       if (pa.seq !== pb.seq) return (pa.seq - pb.seq) * dir;
-      return String(a.jobNo || "").localeCompare(String(b.jobNo || "")) * dir;
+      return String(a.jobNo || "").localeCompare(String(b.jobNo || ""));
     });
 
     return list;
@@ -855,8 +862,8 @@ export default function JobsTable({
                   }}
                   title={
                     jobSortDir === "asc"
-                      ? "กำลังเรียง SHAI → SHSE → SHSI → SHAE และลำดับ 0001 → 1000 (คลิกเพื่อสลับเป็นมากไปน้อย)"
-                      : "กำลังเรียง SHAI → SHSE → SHSI → SHAE และลำดับ 1000 → 0001 (คลิกเพื่อสลับเป็นน้อยไปมาก)"
+                      ? "กำลังเรียง: เดือน 01→12 และลำดับงาน 0001→9999 (คลิกเพื่อเรียงจากล่าสุดลงมา)"
+                      : "กำลังเรียง: เดือน 12→01 และลำดับงานล่าสุด→0001 (คลิกเพื่อเรียงจาก 0001 ขึ้นไป)"
                   }
                   className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
                 >
@@ -866,9 +873,6 @@ export default function JobsTable({
                   ) : (
                     <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
                   )}
-                  <span className="font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[#073766] normal-case tracking-normal">
-                    {jobSortDir === "asc" ? "0001→9999" : "9999→0001"}
-                  </span>
                 </button>
               </th>
               <th className="py-3 px-3">บริการ</th>
