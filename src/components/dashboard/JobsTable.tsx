@@ -549,36 +549,34 @@ export default function JobsTable({
                 {monthOptions.map((m) => {
                   const checked = selectedMonths.includes(m.key);
                   return (
-                    <label
-                      key={m.key}
-                      className={`flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-md text-xs cursor-pointer select-none border transition-colors ${
-                        checked
-                          ? "bg-[#f0f9ff] border-[#bae6fd] text-[#0369a1] font-semibold"
-                          : "border-transparent text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleMonth(m.key)}
-                          className="sr-only"
-                        />
-                        <span
-                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                            checked
-                              ? "bg-[#0284c7] border-[#0284c7] text-white"
-                              : "border-slate-300 bg-white"
-                          }`}
-                        >
-                          {checked && <Check className="w-3 h-3 stroke-[2.5]" />}
+                      <button
+                        key={m.key}
+                        type="button"
+                        role="option"
+                        aria-selected={checked}
+                        onClick={() => toggleMonth(m.key)}
+                        className={`flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-md text-xs text-left cursor-pointer select-none border transition-colors ${
+                          checked
+                            ? "bg-[#f0f9ff] border-[#bae6fd] text-[#0369a1] font-semibold"
+                            : "border-transparent text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                              checked
+                                ? "bg-[#0284c7] border-[#0284c7] text-white"
+                                : "border-slate-300 bg-white"
+                            }`}
+                          >
+                            {checked && <Check className="w-3 h-3 stroke-[2.5]" />}
+                          </span>
+                          <span className="truncate">{m.label}</span>
+                        </div>
+                        <span className="font-mono text-[11px] text-slate-400 tabular-nums shrink-0">
+                          {m.count}
                         </span>
-                        <span className="truncate">{m.label}</span>
-                      </div>
-                      <span className="font-mono text-[11px] text-slate-400 tabular-nums shrink-0">
-                        {m.count}
-                      </span>
-                    </label>
+                      </button>
                   );
                 })}
               </div>
@@ -657,21 +655,19 @@ export default function JobsTable({
                   .map((c) => {
                     const checked = selectedCustomers.includes(c.name);
                     return (
-                      <label
+                      <button
                         key={c.name}
-                        className={`flex items-center justify-between gap-2.5 px-2.5 py-2 rounded-md text-xs cursor-pointer select-none transition-colors ${
+                        type="button"
+                        role="option"
+                        aria-selected={checked}
+                        onClick={() => toggleCustomer(c.name)}
+                        className={`w-full flex items-center justify-between gap-2.5 px-2.5 py-2 rounded-md text-xs text-left cursor-pointer select-none transition-colors ${
                           checked
                             ? "bg-[#f0f9ff] text-[#0369a1] font-semibold"
                             : "text-slate-700 hover:bg-slate-50"
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleCustomer(c.name)}
-                            className="sr-only"
-                          />
                           <span
                             className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
                               checked
@@ -688,7 +684,7 @@ export default function JobsTable({
                         <span className="font-mono text-[11px] text-slate-400 tabular-nums shrink-0">
                           {c.count}
                         </span>
-                      </label>
+                      </button>
                     );
                   })}
               </div>
