@@ -30,6 +30,7 @@ import {
   getJobMonth,
   daysOpen,
   isOpen,
+  classifyJob,
 } from "@/lib/dashboard-helpers";
 import { Search, Layers, Plane, Ship, X, ChevronDown, Check } from "lucide-react";
 
@@ -128,52 +129,34 @@ export default function JobsTable({
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
   const monthDropdownRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setSelectedMonths(monthFilter && monthFilter !== "all" ? [monthFilter] : []);
-  }, [monthFilter]);
-
-  useEffect(() => {
-    if (!monthDropdownOpen) return;
-    function handleOutside(e: MouseEvent) {
-      if (monthDropdownRef.current && !monthDropdownRef.current.contains(e.target as Node)) {
-        setMonthDropdownOpen(false);
-      }
-    }
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setMonthDropdownOpen(false);
-    }
-    document.addEventListener("mousedown", handleOutside);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handleOutside);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [monthDropdownOpen]);
-
-  const toggleMonth = (key: string) => {
-    setSelectedMonths((prev) => {
-      const next = prev.includes(key) ? prev.filter((m) => m !== key) : [...prev, key];
-      setMonthFilter(next.length === 1 ? next[0] : "all");
-      return next;
-    });
-    setPageNum(1);
-  };
-
   // กรองตามผู้นำเข้า / ส่งออก (รองรับการเลือกหลายบริษัทแบบ Checklist; ว่าง = ทั้งหมด)
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
   const customerDropdownRef = useRef<HTMLDivElement>(null);
 
+  // ซิงค์เฉพาะเมื่อผู้ใช้เปลี่ยนเดือนจากแถบด้านบนของหน้า Overview
   useEffect(() => {
-    if (!customerDropdownOpen) return;
+    setSelectedMonths(monthFilter && monthFilter !== "all" ? [monthFilter] : []);
+  }, [monthFilter]);
+
+  // ปิดเมนู Checklist เมื่อคลิกด้านนอกหรือกดปุ่ม Escape (รวมศูนย์ใน Effect เดียว)
+  useEffect(() => {
+    if (!monthDropdownOpen && !customerDropdownOpen) return;
     function handleOutside(e: MouseEvent) {
-      if (customerDropdownRef.current && !customerDropdownRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (monthDropdownRef.current && !monthDropdownRef.current.contains(target)) {
+        setMonthDropdownOpen(false);
+      }
+      if (customerDropdownRef.current && !customerDropdownRef.current.contains(target)) {
         setCustomerDropdownOpen(false);
       }
     }
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setCustomerDropdownOpen(false);
+      if (e.key === "Escape") {
+        setMonthDropdownOpen(false);
+        setCustomerDropdownOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleOutside);
     document.addEventListener("keydown", handleKey);
@@ -181,7 +164,14 @@ export default function JobsTable({
       document.removeEventListener("mousedown", handleOutside);
       document.removeEventListener("keydown", handleKey);
     };
-  }, [customerDropdownOpen]);
+  }, [monthDropdownOpen, customerDropdownOpen]);
+
+  const toggleMonth = (key: string) => {
+    setSelectedMonths((prev) =>
+      prev.includes(key) ? prev.filter((m) => m !== key) : [...prev, key]
+    );
+    setPageNum(1);
+  };
 
   const toggleCustomer = (name: string) => {
     setSelectedCustomers((prev) =>
@@ -277,24 +267,7 @@ export default function JobsTable({
     };
 
     for (const j of baseList) {
-      if (j.status === "Completed") {
-        counts.Completed++;
-      } else if (j.status === "Cancelled") {
-        counts.Cancelled++;
-      } else if (
-        (j.statusDetail || "").includes("Booking") ||
-        (j.statusDetail || "").includes("Request") ||
-        j.status === "Booking"
-      ) {
-        counts.Booking++;
-      } else if (
-        (j.statusDetail || "").includes("Wait") ||
-        j.statusDetail === "Job Waiting"
-      ) {
-        counts.Waiting++;
-      } else {
-        counts.Control++;
-      }
+      counts[classifyJob(j)]++;
     }
     return counts;
   }, [jobs, selectedMonths, serviceFilter, selectedCustomers]);
@@ -329,37 +302,7 @@ export default function JobsTable({
 
     // 2.3 กรองตามสถานะ (Job Booking Request > Job Control > Job Waiting > Job Complete)
     if (statusFilter !== "all") {
-      if (statusFilter === "Booking") {
-        list = list.filter(
-          (j) =>
-            (j.statusDetail || "").includes("Booking") ||
-            (j.statusDetail || "").includes("Request") ||
-            j.status === "Booking"
-        );
-      } else if (statusFilter === "Control") {
-        list = list.filter(
-          (j) =>
-            (j.statusDetail || "").includes("Control") ||
-            (j.status === "In Progress" &&
-              !(j.statusDetail || "").includes("Wait") &&
-              !(j.statusDetail || "").includes("Booking") &&
-              !(j.statusDetail || "").includes("Request"))
-        );
-      } else if (statusFilter === "Waiting") {
-        list = list.filter(
-          (j) =>
-            (j.statusDetail || "").includes("Wait") ||
-            j.statusDetail === "Job Waiting"
-        );
-      } else if (statusFilter === "Completed") {
-        list = list.filter((j) => j.status === "Completed");
-      } else if (statusFilter === "Cancelled") {
-        list = list.filter((j) => j.status === "Cancelled");
-      } else {
-        list = list.filter(
-          (j) => j.status === statusFilter || j.statusDetail === statusFilter
-        );
-      }
+      list = list.filter((j) => classifyJob(j) === statusFilter);
     }
 
     // 2.4 กรองตามขั้นตอนพิธีการศุลกากร (e-Customs Pipeline)

@@ -55,75 +55,92 @@ function sanitizeNum(n: any): number | null {
   return isNaN(num) ? null : num;
 }
 
+const JOB_SELECT_SQL = `
+  SELECT 
+    id,
+    job_no AS "jobNo",
+    service,
+    service_label AS "serviceLabel",
+    status,
+    status_detail AS "statusDetail",
+    status_raw AS "statusRaw",
+    customer,
+    consignee,
+    bl,
+    mbl,
+    hbl,
+    join_no AS "joinNo",
+    update_status AS "updateStatus",
+    to_char(etd, 'YYYY-MM-DD') AS etd,
+    to_char(eta, 'YYYY-MM-DD') AS eta,
+    to_char(job_date, 'YYYY-MM-DD') AS "jobDate",
+    month,
+    year,
+    draft_customs AS "draftCustoms",
+    advance_doc AS "advanceDoc",
+    do_released AS "doReleased",
+    customs_filed AS "customsFiled",
+    cleared,
+    to_char(draft_date, 'YYYY-MM-DD') AS "draftDate",
+    to_char(customs_date, 'YYYY-MM-DD') AS "customsDate",
+    to_char(do_date, 'YYYY-MM-DD') AS "doDate",
+    to_char(clear_date, 'YYYY-MM-DD') AS "clearDate",
+    to_char(advance_date, 'YYYY-MM-DD') AS "advanceDate",
+    remark,
+    source_sheet AS "sourceSheet",
+    source_row AS "sourceRow",
+    running_no AS "runningNo",
+    version,
+    next_action AS "nextAction",
+    age_days AS "ageDays",
+    flags,
+    invoice_no AS "invoiceNo",
+    declaration_no AS "declarationNo",
+    container_type AS "containerType",
+    gross_weight AS "grossWeight",
+    cbm,
+    commodity,
+    cs_name AS "csName",
+    data_source AS "dataSource"
+  FROM public.jobs
+`;
+
+function mapPostgresJobRow(row: any): JobRecord {
+  return {
+    ...row,
+    customsStatus: ["0109", "0209", "0309", "0409"].includes(String(row.updateStatus || ""))
+      ? String(row.updateStatus)
+      : row.cleared || row.status === "Completed"
+      ? "0409"
+      : row.customsFiled || Boolean(row.declarationNo)
+      ? "0309"
+      : undefined,
+    grossWeight: row.grossWeight ? Number(row.grossWeight) : 0,
+    cbm: row.cbm ? Number(row.cbm) : 0,
+    flags: Array.isArray(row.flags) ? row.flags : [],
+  } as JobRecord;
+}
+
 export async function fetchJobsFromPostgres(): Promise<JobRecord[] | null> {
   const p = getDbPool();
   if (!p) return null;
   try {
-    const res = await p.query(`
-      SELECT 
-        id,
-        job_no AS "jobNo",
-        service,
-        service_label AS "serviceLabel",
-        status,
-        status_detail AS "statusDetail",
-        status_raw AS "statusRaw",
-        customer,
-        consignee,
-        bl,
-        mbl,
-        hbl,
-        join_no AS "joinNo",
-        update_status AS "updateStatus",
-        to_char(etd, 'YYYY-MM-DD') AS etd,
-        to_char(eta, 'YYYY-MM-DD') AS eta,
-        to_char(job_date, 'YYYY-MM-DD') AS "jobDate",
-        month,
-        year,
-        draft_customs AS "draftCustoms",
-        advance_doc AS "advanceDoc",
-        do_released AS "doReleased",
-        customs_filed AS "customsFiled",
-        cleared,
-        to_char(draft_date, 'YYYY-MM-DD') AS "draftDate",
-        to_char(customs_date, 'YYYY-MM-DD') AS "customsDate",
-        to_char(do_date, 'YYYY-MM-DD') AS "doDate",
-        to_char(clear_date, 'YYYY-MM-DD') AS "clearDate",
-        to_char(advance_date, 'YYYY-MM-DD') AS "advanceDate",
-        remark,
-        source_sheet AS "sourceSheet",
-        source_row AS "sourceRow",
-        running_no AS "runningNo",
-        version,
-        next_action AS "nextAction",
-        age_days AS "ageDays",
-        flags,
-        invoice_no AS "invoiceNo",
-        declaration_no AS "declarationNo",
-        container_type AS "containerType",
-        gross_weight AS "grossWeight",
-        cbm,
-        commodity,
-        cs_name AS "csName",
-        data_source AS "dataSource"
-      FROM public.jobs
-      ORDER BY id ASC;
-    `);
-    return res.rows.map((row) => ({
-      ...row,
-      customsStatus: ["0109", "0209", "0309", "0409"].includes(String(row.updateStatus || ""))
-        ? String(row.updateStatus)
-        : row.cleared || row.status === "Completed"
-        ? "0409"
-        : row.customsFiled || Boolean(row.declarationNo)
-        ? "0309"
-        : undefined,
-      grossWeight: row.grossWeight ? Number(row.grossWeight) : 0,
-      cbm: row.cbm ? Number(row.cbm) : 0,
-      flags: Array.isArray(row.flags) ? row.flags : [],
-    })) as JobRecord[];
+    const res = await p.query(`${JOB_SELECT_SQL} ORDER BY id ASC;`);
+    return res.rows.map(mapPostgresJobRow);
   } catch (err) {
     console.warn("[DB] Failed to fetch jobs from PostgreSQL:", err);
+    return null;
+  }
+}
+
+export async function fetchJobByNoFromPostgres(jobNo: string): Promise<JobRecord | null> {
+  const p = getDbPool();
+  if (!p) return null;
+  try {
+    const res = await p.query(`${JOB_SELECT_SQL} WHERE job_no = $1 LIMIT 1;`, [jobNo]);
+    return res.rows[0] ? mapPostgresJobRow(res.rows[0]) : null;
+  } catch (err) {
+    console.warn("[DB] Failed to fetch single job from PostgreSQL:", err);
     return null;
   }
 }

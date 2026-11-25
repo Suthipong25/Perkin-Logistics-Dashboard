@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getJobs, updateJobInMemory } from "@/lib/data-store";
-import { updateJobInPostgres, fetchJobsFromPostgres } from "@/lib/db";
+import { updateJobInPostgres, fetchJobByNoFromPostgres } from "@/lib/db";
 
 const SHEET_COLUMN_MAP: Record<
   string,
@@ -98,14 +98,9 @@ export async function GET(
   { params }: { params: { jobNo: string } }
 ) {
   const jobNo = decodeURIComponent(params.jobNo);
-  const currentJobs = getJobs();
-  let currentJob = currentJobs.find((j) => j.jobNo === jobNo);
-  if (!currentJob) {
-    const pgJobs = await fetchJobsFromPostgres();
-    if (pgJobs) {
-      currentJob = pgJobs.find((j) => j.jobNo === jobNo);
-    }
-  }
+  const currentJob =
+    getJobs().find((j) => j.jobNo === jobNo) ||
+    (await fetchJobByNoFromPostgres(jobNo));
   if (!currentJob) {
     return NextResponse.json({ error: "ไม่พบหมายเลขงานนี้" }, { status: 404 });
   }
@@ -119,15 +114,10 @@ export async function PATCH(
   const jobNo = decodeURIComponent(params.jobNo);
   const body = await req.json();
 
-  // 1. ตรวจสอบว่ามีหมายเลขงานอยู่ในระบบหรือไม่ (ตรวจสอบทั้งหน่วยความจำและฐานข้อมูล Supabase)
-  const currentJobs = getJobs();
-  let currentJob = currentJobs.find((j) => j.jobNo === jobNo);
-  if (!currentJob) {
-    const pgJobs = await fetchJobsFromPostgres();
-    if (pgJobs) {
-      currentJob = pgJobs.find((j) => j.jobNo === jobNo);
-    }
-  }
+  // 1. ตรวจสอบว่ามีหมายเลขงานอยู่ในระบบหรือไม่ (ค้นหา O(1) ด้วย job_no จากหน่วยความจำหรือ Supabase)
+  const currentJob =
+    getJobs().find((j) => j.jobNo === jobNo) ||
+    (await fetchJobByNoFromPostgres(jobNo));
   if (!currentJob) {
     return NextResponse.json({ error: "ไม่พบหมายเลขงานนี้" }, { status: 404 });
   }

@@ -28,6 +28,8 @@ import {
   getJobMonth,
   daysOpen,
   isOpen,
+  classifyJob,
+  JobStage,
 } from "@/lib/dashboard-helpers";
 import TrendChart, { SERIES_LIST } from "./TrendChart";
 import { Calendar } from "lucide-react";
@@ -36,28 +38,6 @@ import {
   ServiceBreakdown,
   OverdueJobsTable,
 } from "./overview";
-
-type JobStage = "Booking" | "Control" | "Waiting" | "Completed" | "Cancelled";
-
-/** จำแนกสถานะงานตามลำดับ FWD System: Job Booking Request > Job Control > Job Waiting > Job Complete */
-function classifyJob(job: JobRecord): JobStage {
-  const st = job.status || "";
-  const std = job.statusDetail || "";
-  const raw = job.statusRaw || "";
-  if (st === "Completed" || std.includes("Complete") || raw.includes("Complete")) return "Completed";
-  if (st === "Cancelled" || std.includes("Cancel") || raw.includes("Cancel")) return "Cancelled";
-  if (
-    st === "Booking" ||
-    std.includes("Booking") ||
-    std.includes("Request") ||
-    raw.includes("Booking") ||
-    raw.includes("Request")
-  ) {
-    return "Booking";
-  }
-  if (std.includes("Wait") || raw.includes("Wait")) return "Waiting";
-  return "Control";
-}
 
 /** 4 กราฟแยกตามสถานะงาน (สีเดียวกับ Service Breakdown) */
 const STAGE_CHARTS: { key: JobStage; label: string; color: string }[] = [

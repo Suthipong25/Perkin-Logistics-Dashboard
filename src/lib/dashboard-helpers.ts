@@ -196,40 +196,64 @@ export function serviceMeta(service: string) {
   );
 }
 
+export type JobStage = "Booking" | "Control" | "Waiting" | "Completed" | "Cancelled";
+
 /**
- * ดึงสถานะการทำงาน (Key, Label ภาษาไทย, จุดสี และ Class ของ Badge)
+ * จำแนกสถานะงานตามลำดับ FWD System (Single Source of Truth)
+ * Flow: Job Booking Request > Job Control > Job Waiting > Job Complete
+ */
+export function classifyJob(job: JobRecord): JobStage {
+  const st = job.status || "";
+  const std = job.statusDetail || "";
+  const raw = job.statusRaw || "";
+  if (st === "Completed" || std.includes("Complete") || raw.includes("Complete")) {
+    return "Completed";
+  }
+  if (st === "Cancelled" || std.includes("Cancel") || raw.includes("Cancel")) {
+    return "Cancelled";
+  }
+  if (
+    st === "Booking" ||
+    std.includes("Booking") ||
+    std.includes("Request") ||
+    raw.includes("Booking") ||
+    raw.includes("Request")
+  ) {
+    return "Booking";
+  }
+  if (std.includes("Wait") || raw.includes("Wait")) {
+    return "Waiting";
+  }
+  return "Control";
+}
+
+/**
+ * ดึงสถานะการทำงาน (Key, Label, จุดสี และ Class ของ Badge)
  */
 export function statusMeta(job: JobRecord) {
-  if (job.status === "Completed")
+  const stage = classifyJob(job);
+  if (stage === "Completed")
     return {
       key: "Completed",
       label: "Job Complete",
       dot: "bg-[#0d7a5f]",
       badge: "bg-[#e6f5f0] text-[#0d7a5f] border-[#0d7a5f]/25",
     };
-  if (job.status === "Cancelled")
+  if (stage === "Cancelled")
     return {
       key: "Cancelled",
       label: "Job Cancelled",
       dot: "bg-[#6e7e91]",
       badge: "bg-slate-100 text-[#526275] border-slate-300",
     };
-  if (
-    job.status === "Booking" ||
-    (job.statusDetail || "").includes("Booking") ||
-    (job.statusDetail || "").includes("Request")
-  )
+  if (stage === "Booking")
     return {
       key: "Booking",
       label: "Job Booking Request",
       dot: "bg-[#8b5cf6]",
       badge: "bg-[#ede9fe] text-[#6d28d9] border-[#8b5cf6]/30",
     };
-  if (
-    job.statusDetail === "Waiting" ||
-    job.statusDetail === "Job Waiting" ||
-    (job.statusDetail || "").includes("Wait")
-  )
+  if (stage === "Waiting")
     return {
       key: "Waiting",
       label: "Job Waiting",
