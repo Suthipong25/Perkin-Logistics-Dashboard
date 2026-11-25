@@ -121,6 +121,44 @@ export default function JobsTable({
   const [q, setQ] = useState("");
   // กรองตามบริการ ("all" หรือชื่อบริการ)
   const [serviceFilter, setServiceFilter] = useState<string>("all");
+  // กรองตามเดือนแบบ Checklist (เลือกได้หลายเดือน; ว่าง = ทุกเดือน)
+  const [selectedMonths, setSelectedMonths] = useState<string[]>(() =>
+    monthFilter && monthFilter !== "all" ? [monthFilter] : []
+  );
+  const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
+  const monthDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setSelectedMonths(monthFilter && monthFilter !== "all" ? [monthFilter] : []);
+  }, [monthFilter]);
+
+  useEffect(() => {
+    if (!monthDropdownOpen) return;
+    function handleOutside(e: MouseEvent) {
+      if (monthDropdownRef.current && !monthDropdownRef.current.contains(e.target as Node)) {
+        setMonthDropdownOpen(false);
+      }
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMonthDropdownOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [monthDropdownOpen]);
+
+  const toggleMonth = (key: string) => {
+    setSelectedMonths((prev) => {
+      const next = prev.includes(key) ? prev.filter((m) => m !== key) : [...prev, key];
+      setMonthFilter(next.length === 1 ? next[0] : "all");
+      return next;
+    });
+    setPageNum(1);
+  };
+
   // กรองตามผู้นำเข้า / ส่งออก (รองรับการเลือกหลายบริษัทแบบ Checklist; ว่าง = ทั้งหมด)
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
@@ -162,13 +200,34 @@ export default function JobsTable({
   const pageSize = 25;
 
   /* ==========================================================================
+   * 0.9 MONTH OPTIONS WITH COUNTS (MEMOIZED)
+   * รายการเดือนพร้อมจำนวนงานตามบริการที่เลือก
+   * ========================================================================== */
+  const monthOptions = useMemo(() => {
+    let baseList = jobs;
+    if (serviceFilter !== "all") {
+      baseList = baseList.filter((j) => j.service === serviceFilter);
+    }
+    const counts = new Map<string, number>();
+    for (const j of baseList) {
+      const m = getJobMonth(j);
+      if (m) counts.set(m, (counts.get(m) || 0) + 1);
+    }
+    return MONTH_FILTER_OPTIONS.filter((m) => m.key !== "all").map((m) => ({
+      ...m,
+      count: counts.get(m.key) || 0,
+    }));
+  }, [jobs, serviceFilter]);
+
+  /* ==========================================================================
    * 1.0 CUSTOMER / IMPORTER OPTIONS (MEMOIZED)
    * รายชื่อผู้นำเข้า / ส่งออกตามบริบทเดือนและบริการที่เลือก
    * ========================================================================== */
   const customerOptions = useMemo(() => {
     let baseList = jobs;
-    if (monthFilter !== "all") {
-      baseList = baseList.filter((j) => getJobMonth(j) === monthFilter);
+    if (selectedMonths.length > 0) {
+      const mSet = new Set(selectedMonths);
+      baseList = baseList.filter((j) => mSet.has(getJobMonth(j) || ""));
     }
     if (serviceFilter !== "all") {
       baseList = baseList.filter((j) => j.service === serviceFilter);
@@ -183,7 +242,7 @@ export default function JobsTable({
     return Array.from(map.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => a.name.localeCompare(b.name, "th"));
-  }, [jobs, monthFilter, serviceFilter]);
+  }, [jobs, selectedMonths, serviceFilter]);
 
   /* ==========================================================================
    * 1.1 FWD SYSTEM STATUS COUNTS (MEMOIZED)
@@ -192,8 +251,9 @@ export default function JobsTable({
    * ========================================================================== */
   const fwdCounts = useMemo(() => {
     let baseList = jobs;
-    if (monthFilter !== "all") {
-      baseList = baseList.filter((j) => getJobMonth(j) === monthFilter);
+    if (selectedMonths.length > 0) {
+      const mSet = new Set(selectedMonths);
+      baseList = baseList.filter((j) => mSet.has(getJobMonth(j) || ""));
     }
     if (serviceFilter !== "all") {
       baseList = baseList.filter((j) => j.service === serviceFilter);
@@ -237,7 +297,7 @@ export default function JobsTable({
       }
     }
     return counts;
-  }, [jobs, monthFilter, serviceFilter, selectedCustomers]);
+  }, [jobs, selectedMonths, serviceFilter, selectedCustomers]);
 
   /* ==========================================================================
    * 2. FILTERED & SORTED JOBS (MEMOIZED)
@@ -246,9 +306,10 @@ export default function JobsTable({
   const filteredJobs = useMemo(() => {
     let list = [...jobs];
 
-    // 2.1 กรองตามเดือน
-    if (monthFilter !== "all") {
-      list = list.filter((j) => getJobMonth(j) === monthFilter);
+    // 2.1 กรองตามเดือน (รองรับหลายเดือนแบบ Checklist)
+    if (selectedMonths.length > 0) {
+      const mSet = new Set(selectedMonths);
+      list = list.filter((j) => mSet.has(getJobMonth(j) || ""));
     }
 
     // 2.2 กรองตามกลุ่มบริการ
@@ -366,7 +427,7 @@ export default function JobsTable({
     });
 
     return list;
-  }, [jobs, monthFilter, serviceFilter, selectedCustomers, statusFilter, customsFilter, overdueOnly, q]);
+  }, [jobs, selectedMonths, serviceFilter, selectedCustomers, statusFilter, customsFilter, overdueOnly, q]);
 
   // คำนวณจำนวนหน้าทั้งหมด
   const totalPages = Math.max(1, Math.ceil(filteredJobs.length / pageSize));
@@ -429,22 +490,97 @@ export default function JobsTable({
           ))}
         </div>
 
-        {/* ดรอปดาวน์เลือกเดือน */}
-        <select
-          value={monthFilter}
-          onChange={(e) => {
-            setMonthFilter(e.target.value);
-            setPageNum(1);
-          }}
-          aria-label="กรองตามเดือน"
-          className="h-9 px-3 rounded-[6px] border border-[#c5cfd9] bg-white text-[13px] text-[#073766] font-semibold"
-        >
-          {MONTH_FILTER_OPTIONS.map((m) => (
-            <option key={m.key} value={m.key}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+        {/* ดรอปดาวน์เลือกเดือนแบบ Checklist (เลือกได้หลายเดือน) */}
+        <div className="relative" ref={monthDropdownRef}>
+          <button
+            type="button"
+            onClick={() => setMonthDropdownOpen((v) => !v)}
+            aria-expanded={monthDropdownOpen}
+            aria-haspopup="listbox"
+            aria-label="กรองตามเดือน (เลือกได้หลายเดือน)"
+            className={`h-9 px-3 rounded-lg border text-xs font-semibold outline-none inline-flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+              selectedMonths.length > 0
+                ? "border-[#0284c7] bg-[#f0f9ff] text-[#0369a1] ring-1 ring-[#0284c7]"
+                : "border-[#c5cfd9] bg-white text-[#073766] hover:border-slate-400"
+            }`}
+          >
+            <span className="truncate max-w-[180px]">
+              {selectedMonths.length === 0
+                ? "ทุกเดือน (All 12 Months)"
+                : selectedMonths.length <= 2
+                ? selectedMonths
+                    .map((k) => MONTH_FILTER_OPTIONS.find((m) => m.key === k)?.label || k)
+                    .join(", ")
+                : `เลือกแล้ว ${selectedMonths.length} เดือน`}
+            </span>
+            <ChevronDown
+              className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${
+                monthDropdownOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+
+          {monthDropdownOpen && (
+            <div className="absolute left-0 top-full mt-1.5 z-40 w-[240px] rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden">
+              <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between text-[11px]">
+                <span className="text-slate-500 font-medium">
+                  เลือกได้หลายเดือน ({selectedMonths.length}/{monthOptions.length})
+                </span>
+                {selectedMonths.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMonths([]);
+                      setMonthFilter("all");
+                      setPageNum(1);
+                    }}
+                    className="text-[#0284c7] hover:underline font-semibold cursor-pointer"
+                  >
+                    ทุกเดือน
+                  </button>
+                )}
+              </div>
+
+              <div className="max-h-[300px] overflow-y-auto divide-y divide-slate-50 p-1" role="listbox" aria-multiselectable="true">
+                {monthOptions.map((m) => {
+                  const checked = selectedMonths.includes(m.key);
+                  return (
+                    <label
+                      key={m.key}
+                      className={`flex items-center justify-between gap-2 px-2.5 py-2 rounded-md text-xs cursor-pointer select-none transition-colors ${
+                        checked
+                          ? "bg-[#f0f9ff] text-[#0369a1] font-semibold"
+                          : "text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleMonth(m.key)}
+                          className="sr-only"
+                        />
+                        <span
+                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                            checked
+                              ? "bg-[#0284c7] border-[#0284c7] text-white"
+                              : "border-slate-300 bg-white"
+                          }`}
+                        >
+                          {checked && <Check className="w-3 h-3 stroke-[2.5]" />}
+                        </span>
+                        <span className="truncate">{m.label}</span>
+                      </div>
+                      <span className="font-mono text-[11px] text-slate-400 tabular-nums shrink-0">
+                        {m.count}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ดรอปดาวน์กรองผู้นำเข้า / ส่งออก แบบ Checklist (เลือกได้หลายบริษัท) */}
         <div className="relative" ref={customerDropdownRef}>
