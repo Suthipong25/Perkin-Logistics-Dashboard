@@ -202,6 +202,11 @@ export async function updateJobInPostgres(
     advanceDate: "advance_date",
     customer: "customer",
     bl: "bl",
+    mbl: "mbl",
+    hbl: "hbl",
+    invoiceNo: "invoice_no",
+    declarationNo: "declaration_no",
+    containerType: "container_type",
     consignee: "consignee",
   };
 

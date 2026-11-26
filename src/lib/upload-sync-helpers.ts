@@ -86,22 +86,20 @@ export function mergeStagingJobRows(prev: any, incoming: any) {
     merged.flightNo = incoming.flightNo || incoming.flight;
   if (incoming.flightTime && incoming.flightTime !== "00:00")
     merged.flightTime = incoming.flightTime;
-  if (incoming.linerBooking && !merged.linerBooking)
-    merged.linerBooking = incoming.linerBooking;
-  if (incoming.bl && !merged.bl) merged.bl = incoming.bl;
-  if (incoming.commodity && !merged.commodity)
-    merged.commodity = incoming.commodity;
-  if (incoming.containerType && !merged.containerType)
-    merged.containerType = incoming.containerType;
-  if (incoming.grossWeight && !merged.grossWeight)
-    merged.grossWeight = incoming.grossWeight;
-  if (incoming.cbm && !merged.cbm) merged.cbm = incoming.cbm;
-  if (incoming.csName && !merged.csName) merged.csName = incoming.csName;
+  if (incoming.linerBooking) merged.linerBooking = incoming.linerBooking;
+  if (incoming.bl && incoming.bl !== "—") merged.bl = incoming.bl;
+  if (incoming.mbl && incoming.mbl !== "—") merged.mbl = incoming.mbl;
+  if (incoming.hbl && incoming.hbl !== "—") merged.hbl = incoming.hbl;
+  if (incoming.invoiceNo && incoming.invoiceNo !== "—") merged.invoiceNo = incoming.invoiceNo;
+  if (incoming.commodity) merged.commodity = incoming.commodity;
+  if (incoming.containerType) merged.containerType = incoming.containerType;
+  if (incoming.grossWeight) merged.grossWeight = incoming.grossWeight;
+  if (incoming.cbm) merged.cbm = incoming.cbm;
+  if (incoming.csName && incoming.csName !== "—") merged.csName = incoming.csName;
   if (
     incoming.customer &&
     incoming.customer !== "—" &&
-    incoming.customer !== "ลูกค้าใหม่" &&
-    (!merged.customer || merged.customer === "—")
+    incoming.customer !== "ลูกค้าใหม่"
   ) {
     merged.customer = incoming.customer;
   }
@@ -276,25 +274,26 @@ export function buildUpdatedJob(existing: JobRecord, stg: any): JobRecord {
   if (stg.feeder) updated.feeder = stg.feeder;
   if (stg.flightNo || stg.flight)
     (updated as any).flightNo = stg.flightNo || stg.flight;
-  if (stg.carrier && !updated.carrier) updated.carrier = stg.carrier;
-  if (stg.bl && (!updated.bl || updated.bl === "—")) updated.bl = stg.bl;
-  if (stg.csName && (!updated.csName || updated.csName === "—"))
-    updated.csName = stg.csName;
+  if (stg.carrier) updated.carrier = stg.carrier;
+  if (stg.bl && stg.bl !== "—") {
+    updated.bl = stg.bl;
+    updated.mbl = stg.mbl || stg.bl;
+  }
+  if (stg.mbl && stg.mbl !== "—") updated.mbl = stg.mbl;
+  if (stg.hbl && stg.hbl !== "—") updated.hbl = stg.hbl;
+  if (stg.invoiceNo && stg.invoiceNo !== "—") updated.invoiceNo = stg.invoiceNo;
+  if (stg.csName && stg.csName !== "—") updated.csName = stg.csName;
   if (
     stg.customer &&
     stg.customer !== "—" &&
-    (!updated.customer ||
-      updated.customer === "—" ||
-      updated.customer === "ลูกค้าใหม่")
+    stg.customer !== "ลูกค้าใหม่"
   ) {
     updated.customer = stg.customer;
   }
-  if (stg.commodity && !updated.commodity) updated.commodity = stg.commodity;
-  if (stg.containerType && !updated.containerType)
-    updated.containerType = stg.containerType;
-  if (stg.grossWeight && !updated.grossWeight)
-    updated.grossWeight = stg.grossWeight;
-  if (stg.cbm && !updated.cbm) updated.cbm = stg.cbm;
+  if (stg.commodity) updated.commodity = stg.commodity;
+  if (stg.containerType) updated.containerType = stg.containerType;
+  if (stg.grossWeight) updated.grossWeight = stg.grossWeight;
+  if (stg.cbm) updated.cbm = stg.cbm;
 
   if (stg.isStatusChanged && stg.hasExplicitStatus && stg.status) {
     updated.status = stg.status;

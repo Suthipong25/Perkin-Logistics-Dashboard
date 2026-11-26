@@ -105,7 +105,17 @@ export default function JobDrawer({
     const fd = new FormData(e.currentTarget);
 
     // สร้าง Patch Payload สำหรับส่งไป API (ไม่อนุญาตให้เปลี่ยน status/statusDetail ผ่านเว็บ สถานะจะเปลี่ยนเฉพาะเมื่ออัปโหลดไฟล์เอกสารเท่านั้น)
+    const blVal = String(fd.get("bl") || "").trim();
+    const hblVal = String(fd.get("hbl") || "").trim();
+    const invVal = String(fd.get("invoiceNo") || "").trim();
+    const cntrVal = String(fd.get("containerType") || "").trim();
+
     const patch: Partial<JobRecord> & { expectedVersion?: number } = {
+      bl: blVal,
+      mbl: blVal,
+      hbl: hblVal,
+      invoiceNo: invVal,
+      containerType: cntrVal,
       etd: String(fd.get("etd") || "") || null,
       eta: String(fd.get("eta") || "") || null,
       draftDate: String(fd.get("draftDate") || "") || null,
@@ -730,6 +740,58 @@ export default function JobDrawer({
               </div>
 
               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="field-bl" className="block text-[12.5px] font-semibold text-[#526275] mb-1">
+                    B/L No. (MBL)
+                  </label>
+                  <input
+                    id="field-bl"
+                    type="text"
+                    name="bl"
+                    defaultValue={selectedJob.mbl || selectedJob.bl || ""}
+                    placeholder="เลข MBL / B/L"
+                    className="w-full h-10 px-3 rounded-[6px] border border-[#c5cfd9] font-mono text-[13.5px]"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="field-hbl" className="block text-[12.5px] font-semibold text-[#526275] mb-1">
+                    HBL No.
+                  </label>
+                  <input
+                    id="field-hbl"
+                    type="text"
+                    name="hbl"
+                    defaultValue={selectedJob.hbl || ""}
+                    placeholder="เลข HBL (ถ้ามี)"
+                    className="w-full h-10 px-3 rounded-[6px] border border-[#c5cfd9] font-mono text-[13.5px]"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="field-invoiceNo" className="block text-[12.5px] font-semibold text-[#526275] mb-1">
+                    Invoice No. (INV)
+                  </label>
+                  <input
+                    id="field-invoiceNo"
+                    type="text"
+                    name="invoiceNo"
+                    defaultValue={selectedJob.invoiceNo || ""}
+                    placeholder="เลข Invoice"
+                    className="w-full h-10 px-3 rounded-[6px] border border-[#c5cfd9] font-mono text-[13.5px]"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="field-containerType" className="block text-[12.5px] font-semibold text-[#526275] mb-1">
+                    ขนาดตู้ / ปริมาณ (PL / Container)
+                  </label>
+                  <input
+                    id="field-containerType"
+                    type="text"
+                    name="containerType"
+                    defaultValue={selectedJob.containerType || ""}
+                    placeholder="เช่น 1 X 40' HQ หรือ 1 X LCL"
+                    className="w-full h-10 px-3 rounded-[6px] border border-[#c5cfd9] font-mono text-[13.5px]"
+                  />
+                </div>
                 <div>
                   <label htmlFor="field-etd" className="block text-[12.5px] font-semibold text-[#526275] mb-1">
                     ETD

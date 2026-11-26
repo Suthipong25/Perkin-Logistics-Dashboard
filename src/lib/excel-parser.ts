@@ -236,6 +236,10 @@ function checkJobDiff(
     feeder?: string | null;
     flightNo?: string | null;
     bl?: string | null;
+    mbl?: string | null;
+    hbl?: string | null;
+    invoiceNo?: string | null;
+    containerType?: string | null;
   },
   matchJob?: JobRecord
 ): JobDiffResult {
@@ -303,20 +307,30 @@ function checkJobDiff(
   const isStatusChanged = statusDiffs.length > 0;
 
   const metaDiffs: string[] = [];
-  const incBl = String(incoming.bl || "").trim();
-  const exBl = String(matchJob.bl || matchJob.hbl || matchJob.mbl || "").trim();
-  if (incBl && incBl !== "—" && (!exBl || exBl === "—")) {
-    metaDiffs.push(`BL: ${incBl}`);
+  const incBl = String(incoming.bl || incoming.mbl || incoming.hbl || "").trim();
+  const exBl = String(matchJob.mbl || matchJob.bl || matchJob.hbl || "").trim();
+  if (incBl && incBl !== "—" && incBl !== exBl) {
+    metaDiffs.push(`BL: ${exBl || "-"} ➔ ${incBl}`);
+  }
+  const incInv = String(incoming.invoiceNo || "").trim();
+  const exInv = String(matchJob.invoiceNo || "").trim();
+  if (incInv && incInv !== "—" && incInv !== exInv) {
+    metaDiffs.push(`INV: ${exInv || "-"} ➔ ${incInv}`);
+  }
+  const incCntr = String(incoming.containerType || "").trim();
+  const exCntr = String(matchJob.containerType || "").trim();
+  if (incCntr && incCntr !== "—" && incCntr !== exCntr) {
+    metaDiffs.push(`Volume/Container: ${exCntr || "-"} ➔ ${incCntr}`);
   }
   const incCs = String(incoming.csName || "").trim();
   const exCs = String(matchJob.csName || "").trim();
-  if (incCs && incCs !== "—" && (!exCs || exCs === "—")) {
-    metaDiffs.push(`CS: ${incCs}`);
+  if (incCs && incCs !== "—" && incCs !== exCs) {
+    metaDiffs.push(`CS: ${exCs || "-"} ➔ ${incCs}`);
   }
   const incCust = String(incoming.customer || "").trim();
   const exCust = String(matchJob.customer || "").trim();
-  if (incCust && incCust !== "—" && incCust !== "ลูกค้าใหม่" && (!exCust || exCust === "—" || exCust === "ลูกค้าใหม่")) {
-    metaDiffs.push(`ลูกค้า: ${incCust}`);
+  if (incCust && incCust !== "—" && incCust !== "ลูกค้าใหม่" && incCust !== exCust) {
+    metaDiffs.push(`ลูกค้า: ${exCust || "-"} ➔ ${incCust}`);
   }
 
   const allDiffs = [...dateDiffs, ...customsDiffs, ...statusDiffs, ...metaDiffs];
@@ -877,12 +891,16 @@ function parseSheetRows(
         etaIso,
         clearIso,
         declarationNo,
+        invoiceNo: invNo,
+        containerType: val(idxCntr),
         customsStatus: customsSt,
         status: parsedStatus,
         hasExplicitStatus,
         csName: val(idxCs),
         customer,
         bl: val(idxMbl) || val(idxHbl),
+        mbl: rawMbl,
+        hbl: rawHbl,
       },
       match
     );
@@ -910,6 +928,8 @@ function parseSheetRows(
       cbm: cbmVal,
       csName: val(idxCs),
       bl: val(idxMbl) || val(idxHbl),
+      mbl: rawMbl,
+      hbl: rawHbl,
       commodity: val(idxCommodity),
       actionType,
       isChanged,

@@ -122,17 +122,17 @@ export async function PATCH(
     return NextResponse.json({ error: "ไม่พบหมายเลขงานนี้" }, { status: 404 });
   }
 
-  // 2. ตรวจสิทธิ์ผู้ใช้ (ops / data_analyse แก้ได้เฉพาะ Status, ETD/ETA, Milestones, Remark; admin แก้ Customer/BL ได้)
+  // 2. ตรวจสิทธิ์ผู้ใช้ (อนุญาตให้แก้ไขหมายเลขเอกสาร B/L, MBL, HBL, Invoice, Container, ETD/ETA, Update Status, Remark ได้)
   const role = req.headers.get("x-user-role") || body.role || "ops";
-  if (role !== "admin" && (body.customer !== undefined || body.bl !== undefined || body.consignee !== undefined)) {
-    return NextResponse.json(
-      { error: "เฉพาะสิทธิ์ Admin เท่านั้นที่สามารถแก้ไขชื่อลูกค้าหรือเลข B/L ได้" },
-      { status: 403 }
-    );
-  }
 
   // Whitelist ฟิลด์ที่อนุญาตให้แก้ไขผ่านหน้าเว็บ (ไม่รวม status / statusDetail / statusRaw เพราะสถานะจะเปลี่ยนเฉพาะเมื่ออัปโหลดไฟล์เอกสารเท่านั้น)
   const allowedKeys = [
+    "bl",
+    "mbl",
+    "hbl",
+    "invoiceNo",
+    "declarationNo",
+    "containerType",
     "etd",
     "eta",
     "draftDate",
@@ -147,7 +147,7 @@ export async function PATCH(
     "cleared",
     "updateStatus",
     "remark",
-    ...(role === "admin" ? ["customer", "bl", "consignee"] : []),
+    ...(role === "admin" ? ["customer", "consignee"] : []),
   ];
 
   const sanitizedPatch: Record<string, any> = {};

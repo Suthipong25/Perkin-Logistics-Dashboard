@@ -441,6 +441,25 @@ export function StagingUploadView({
               }`
             : "";
 
+          const metaDiffs: string[] = [];
+          const incBl = String(r.bl || r.mbl || r.hbl || "").trim();
+          const exBl = String(existing?.mbl || existing?.bl || existing?.hbl || "").trim();
+          if (existsInMaster && incBl && incBl !== "—" && incBl !== exBl) {
+            metaDiffs.push(`BL: ${exBl || "-"} ➔ ${incBl}`);
+          }
+          const incInv = String(r.invoiceNo || "").trim();
+          const exInv = String(existing?.invoiceNo || "").trim();
+          if (existsInMaster && incInv && incInv !== "—" && incInv !== exInv) {
+            metaDiffs.push(`INV: ${exInv || "-"} ➔ ${incInv}`);
+          }
+          const incCntr = String(r.containerType || "").trim();
+          const exCntr = String(existing?.containerType || "").trim();
+          if (existsInMaster && incCntr && incCntr !== "—" && incCntr !== exCntr) {
+            metaDiffs.push(`Volume: ${exCntr || "-"} ➔ ${incCntr}`);
+          }
+          const isMetaChanged = existsInMaster && metaDiffs.length > 0;
+          const metaChangeDiff = metaDiffs.join(" • ");
+
           let note =
             r.validationNote || (!effectiveKey ? "ไม่มีเลข Job No" : undefined);
           let vStatus: "valid" | "warning" =
@@ -449,12 +468,13 @@ export function StagingUploadView({
               : "warning";
 
           if (existsInMaster) {
-            if (isDateChanged || isCustomsChanged || isStatusChanged) {
+            if (isDateChanged || isCustomsChanged || isStatusChanged || isMetaChanged || r.isChanged) {
               vStatus = "valid";
               note = `🔄 อัปเดต: ${[
                 statusChangeDiff,
                 dateChangeDiff,
                 customsChangeDiff,
+                metaChangeDiff,
               ]
                 .filter(Boolean)
                 .join(" • ")} (อัปเดตทับงานเดิม ไม่เพิ่มแถวใหม่)`;
@@ -536,11 +556,12 @@ export function StagingUploadView({
             isBlankDummy,
             isGenuineNew,
             isDateChanged,
-            isCustomsChanged,
+            isCustomsChanged: isCustomsChanged || isMetaChanged,
             isStatusChanged,
+            isChanged: Boolean(isDateChanged || isCustomsChanged || isStatusChanged || isMetaChanged || r.isChanged),
             oldStatus: exStatusDetail || exStatus || null,
             statusChangeDiff,
-            customsChangeDiff,
+            customsChangeDiff: [customsChangeDiff, metaChangeDiff].filter(Boolean).join(" • "),
             oldEtd: exEtd || null,
             oldEta: exEta || null,
             oldFlightTime: exTime || null,
@@ -696,28 +717,26 @@ export function StagingUploadView({
           if (stg.vessel) target.vessel = stg.vessel;
           if (stg.feeder) target.feeder = stg.feeder;
           if (stg.flightNo) target.flightNo = stg.flightNo;
-          if (stg.carrier && !target.carrier) target.carrier = stg.carrier;
-          if (stg.bl && (!target.bl || target.bl === "—")) target.bl = stg.bl;
-          if (stg.csName && (!target.csName || target.csName === "—"))
-            target.csName = stg.csName;
+          if (stg.carrier) target.carrier = stg.carrier;
+          if (stg.bl && stg.bl !== "—") {
+            target.bl = stg.bl;
+            target.mbl = (stg as any).mbl || stg.bl;
+          }
+          if ((stg as any).mbl && (stg as any).mbl !== "—") target.mbl = (stg as any).mbl;
+          if ((stg as any).hbl && (stg as any).hbl !== "—") target.hbl = (stg as any).hbl;
+          if (stg.csName && stg.csName !== "—") target.csName = stg.csName;
           if (
             stg.customer &&
             stg.customer !== "—" &&
-            (!target.customer ||
-              target.customer === "—" ||
-              target.customer === "ลูกค้าใหม่")
+            stg.customer !== "ลูกค้าใหม่"
           ) {
             target.customer = stg.customer;
           }
-          if (stg.commodity && !target.commodity)
-            target.commodity = stg.commodity;
-          if (stg.containerType && !target.containerType)
-            target.containerType = stg.containerType;
-          if (stg.grossWeight && !target.grossWeight)
-            target.grossWeight = stg.grossWeight;
-          if (stg.cbm && !target.cbm) target.cbm = stg.cbm;
-          if (stg.invoiceNo && !target.invoiceNo)
-            target.invoiceNo = stg.invoiceNo;
+          if (stg.commodity) target.commodity = stg.commodity;
+          if (stg.containerType) target.containerType = stg.containerType;
+          if (stg.grossWeight) target.grossWeight = stg.grossWeight;
+          if (stg.cbm) target.cbm = stg.cbm;
+          if (stg.invoiceNo && stg.invoiceNo !== "—") target.invoiceNo = stg.invoiceNo;
 
           if (stg.isStatusChanged && stg.hasExplicitStatus && stg.status) {
             target.status = stg.status as JobRecord["status"];

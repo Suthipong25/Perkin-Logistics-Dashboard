@@ -120,10 +120,10 @@ export const isSelectable = (r: StagingRecord): boolean => {
   ) {
     return true;
   }
-  // Existing jobs may be updated by changed schedules, customs data, or explicit status changes.
+  // Existing jobs may be updated by changed schedules, customs data, status changes, or document numbers (BL / INV / Container).
   if (
     r.actionType === "update" &&
-    (r.isDateChanged || r.isCustomsChanged || r.isStatusChanged)
+    (r.isDateChanged || r.isCustomsChanged || r.isStatusChanged || (r as any).isChanged)
   ) {
     return true;
   }
