@@ -55,6 +55,8 @@ export interface TrendChartProps {
   onSelectMonth: (m: string) => void;
   /** โหมดกราฟเล็ก: ซ่อนแถบควบคุม/legend และแสดงเป็นแผนภูมิแท่งเสมอ */
   compact?: boolean;
+  /** โหมดเริ่มต้น ("months" | "daily") */
+  defaultViewMode?: "months" | "daily";
   /** หัวข้อกราฟ (ใช้ในโหมด compact) */
   title?: string;
   /** สีประจำกราฟ (ใช้ในโหมด compact) */
@@ -106,24 +108,23 @@ export default function TrendChart({
   activeMonth,
   onSelectMonth,
   compact = false,
+  defaultViewMode,
   title,
   accent = "#0c2340",
 }: TrendChartProps) {
   // โหมดการแสดงผล: "months" = กราฟเส้นรวม 12 เดือน, "daily" = แผนภูมิแท่งรายวัน วันที่ 1 - 31
   const [viewMode, setViewMode] = useState<"months" | "daily">(
-    activeMonth && activeMonth !== "all" ? "daily" : "months"
+    defaultViewMode ?? (activeMonth && activeMonth !== "all" ? "daily" : "months")
   );
 
   // สลับมุมมองอัตโนมัติเมื่อ activeMonth เปลี่ยน
-  // ถ้าเลือกเดือนเฉพาะ -> แสดงแผนภูมิแท่งทันที
-  // ถ้าเลือก "all" -> สลับเป็นภาพรวม Total 12 เดือน
   useEffect(() => {
     if (activeMonth === "all") {
-      setViewMode("months");
+      setViewMode(defaultViewMode ?? "months");
     } else if (activeMonth) {
       setViewMode("daily");
     }
-  }, [activeMonth]);
+  }, [activeMonth, defaultViewMode]);
 
   // เปิด/ปิดการแสดงตัวเลขจำนวนงานบนแท่ง/เส้น
   const [showDataLabels, setShowDataLabels] = useState<boolean>(true);

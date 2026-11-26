@@ -301,6 +301,16 @@ export default function OverviewView({
     });
   };
 
+  // ข้อมูลกราฟ Overall (รวมทุกสถานะงาน ทั้งรายวัน 1-31 และรายเดือน 1-12)
+  const overallChart = useMemo(
+    () => ({
+      months: buildMonths(jobs),
+      daily: buildDaily(jobs),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [jobs, activeTargetMonth]
+  );
+
   // ข้อมูล 4 กราฟแยกตามสถานะงาน
   const stageCharts = useMemo(
     () =>
@@ -367,6 +377,30 @@ export default function OverviewView({
 
       {/* SECTION 3: SERVICE BREAKDOWN (สัดส่วน 6 บริการหลัก: Bars vs Matrix) */}
       <ServiceBreakdown monthFilter={monthFilter} stats={stats} />
+
+      {/* SECTION 3.5: กราฟภาพรวมรายวัน (Daily Overall Volume Trend — วันที่ 1 - 31) */}
+      <section className="bg-white rounded-xl border border-slate-200/90 p-5 lg:p-6 flex flex-col shadow-xs">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="text-[16px] font-bold text-[#0c2340]">
+              ภาพรวมปริมาณงานรายวัน (Daily Overall Trend — ทุกวัน วันที่ 1–31)
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              ปริมาณงานรวมทุกสถานะในแต่ละวัน แยกสีตามประเภทบริการ (SEA Import, SEA Export, AIR Import, AIR Export, Transport, Freight) · สลับดูรายเดือนได้
+            </p>
+          </div>
+          <span className="text-xs font-mono font-semibold text-[#073766] bg-[#eaf4fc] px-2.5 py-1 rounded-md border border-[#073766]/15">
+            รอบเดือน: {fmtMonth(activeTargetMonth)}
+          </span>
+        </div>
+        <TrendChart
+          defaultViewMode="daily"
+          monthsData={overallChart.months}
+          dailyData={overallChart.daily}
+          activeMonth={monthFilter}
+          onSelectMonth={(m) => setMonthFilter(m)}
+        />
+      </section>
 
       {/* SECTION 4: 4 กราฟแนวโน้มแยกตามสถานะงาน (Booking / Control / Waiting / Complete) */}
       <section className="bg-white rounded-xl border border-slate-200/90 p-5 lg:p-6 flex flex-col shadow-xs">
