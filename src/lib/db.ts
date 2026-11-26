@@ -310,7 +310,7 @@ async function executeJobsUpsertOnPool(poolInstance: Pool, jobs: JobRecord[], ch
           j.mbl || "",
           j.hbl || "",
           j.joinNo || "",
-          j.customsStatus || j.updateStatus || "",
+          j.updateStatus || j.customsStatus || "",
           sanitizeDate(j.etd),
           sanitizeDate(j.eta),
           sanitizeDate(j.jobDate),

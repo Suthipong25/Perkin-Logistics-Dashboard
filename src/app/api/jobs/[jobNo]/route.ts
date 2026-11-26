@@ -131,10 +131,8 @@ export async function PATCH(
     );
   }
 
-  // Whitelist ฟิลด์ที่อนุญาตให้แก้ไข (ป้องกัน Mass Assignment)
+  // Whitelist ฟิลด์ที่อนุญาตให้แก้ไขผ่านหน้าเว็บ (ไม่รวม status / statusDetail / statusRaw เพราะสถานะจะเปลี่ยนเฉพาะเมื่ออัปโหลดไฟล์เอกสารเท่านั้น)
   const allowedKeys = [
-    "status",
-    "statusDetail",
     "etd",
     "eta",
     "draftDate",

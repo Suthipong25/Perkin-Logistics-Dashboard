@@ -96,25 +96,9 @@ export default function JobDrawer({
     if (!selectedJob) return;
 
     const fd = new FormData(e.currentTarget);
-    const statusVal = String(fd.get("status") || "Control");
-    const rawStatus =
-      statusVal === "Completed"
-        ? "Job Complete"
-        : statusVal === "Waiting"
-        ? "Job Waiting"
-        : statusVal === "Cancelled"
-        ? "Job Cancelled"
-        : "Job Control";
 
-    // สร้าง Patch Payload สำหรับส่งไป API
+    // สร้าง Patch Payload สำหรับส่งไป API (ไม่อนุญาตให้เปลี่ยน status/statusDetail ผ่านเว็บ สถานะจะเปลี่ยนเฉพาะเมื่ออัปโหลดไฟล์เอกสารเท่านั้น)
     const patch: Partial<JobRecord> & { expectedVersion?: number } = {
-      status: (statusVal === "Completed"
-        ? "Completed"
-        : statusVal === "Cancelled"
-        ? "Cancelled"
-        : "In Progress") as JobRecord["status"],
-      statusDetail: statusVal,
-      statusRaw: rawStatus,
       etd: String(fd.get("etd") || "") || null,
       eta: String(fd.get("eta") || "") || null,
       draftDate: String(fd.get("draftDate") || "") || null,
@@ -637,20 +621,22 @@ export default function JobDrawer({
               </div>
 
               <div>
-                <label htmlFor="field-status" className="block text-[13px] font-semibold text-[#102238] mb-1">
-                  สถานะงาน (Job Status)
-                </label>
-                <select
-                  id="field-status"
-                  name="status"
-                  defaultValue={statusMeta(selectedJob).key}
-                  className="w-full h-10 px-3 rounded-[6px] border border-[#c5cfd9] text-[14px]"
-                >
-                  <option value="Control">กำลังดำเนินการ (Job Control)</option>
-                  <option value="Waiting">รอเอกสาร (Job Waiting)</option>
-                  <option value="Completed">เสร็จสิ้น (Job Complete)</option>
-                  <option value="Cancelled">ยกเลิก (Job Cancelled)</option>
-                </select>
+                <div className="block text-[13px] font-semibold text-[#102238] mb-1">
+                  สถานะงาน (Job Status — เปลี่ยนเมื่ออัปเดตไฟล์เอกสารเท่านั้น)
+                </div>
+                <div className="w-full h-10 px-3 rounded-[6px] border border-slate-200 bg-slate-50 flex items-center justify-between text-[13.5px]">
+                  <span
+                    className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded border ${
+                      statusMeta(selectedJob).badge
+                    }`}
+                  >
+                    <i className={`w-2 h-2 rounded-full ${statusMeta(selectedJob).dot}`} />
+                    {statusMeta(selectedJob).label}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    อัปเดตอัตโนมัติตามไฟล์ Excel
+                  </span>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
