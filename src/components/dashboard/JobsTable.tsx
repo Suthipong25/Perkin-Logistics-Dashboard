@@ -31,6 +31,7 @@ import {
   daysOpen,
   isOpen,
   classifyJob,
+  parseUpdateStatus,
 } from "@/lib/dashboard-helpers";
 import { Search, Layers, Plane, Ship, X, ChevronDown, Check, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 
@@ -1041,18 +1042,21 @@ export default function JobsTable({
                       {j.csName || "—"}
                     </td>
 
-                    {/* Update Status Banner Text */}
+                    {/* Update Status Banner Text (รองรับสีไฮไลท์) */}
                     <td className="py-3 px-3 text-[12px] max-w-[240px]">
-                      {j.updateStatus ? (
-                        <div
-                          className="line-clamp-2 text-[#073766] font-medium bg-[#eaf4fc] px-2 py-1 rounded border border-[#073766]/15 leading-tight text-[11.5px]"
-                          title={j.updateStatus}
-                        >
-                          {j.updateStatus}
-                        </div>
-                      ) : (
-                        <span className="text-[#94a3b8]">—</span>
-                      )}
+                      {(() => {
+                        const upd = parseUpdateStatus(j.updateStatus);
+                        return upd.text ? (
+                          <div
+                            className={`line-clamp-2 font-medium px-2 py-1 rounded border leading-tight text-[11.5px] ${upd.meta.cellClass}`}
+                            title={upd.text}
+                          >
+                            {upd.text}
+                          </div>
+                        ) : (
+                          <span className="text-[#94a3b8]">—</span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );

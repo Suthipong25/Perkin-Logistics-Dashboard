@@ -9,6 +9,7 @@ import {
   fmtMonth,
   serviceMeta,
   daysOpen,
+  parseUpdateStatus,
 } from "@/lib/dashboard-helpers";
 
 interface OverdueJobsTableProps {
@@ -163,15 +164,19 @@ export function OverdueJobsTable({
                     </td>
                     <td
                       className="py-3 px-4 max-w-[240px] truncate text-xs text-[#526275]"
-                      title={j.updateStatus || j.remark || "คลิกเพื่อเปิด Drawer ระบุสถานะ/หมายเหตุ"}
+                      title={parseUpdateStatus(j.updateStatus).text || j.remark || "คลิกเพื่อเปิด Drawer ระบุสถานะ/หมายเหตุ"}
                     >
-                      {j.updateStatus || j.remark ? (
-                        <span className="text-[#102238] font-medium">
-                          {j.updateStatus || j.remark}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 font-mono">—</span>
-                      )}
+                      {(() => {
+                        const upd = parseUpdateStatus(j.updateStatus);
+                        const txt = upd.text || j.remark;
+                        return txt ? (
+                          <span className={`inline-block px-2 py-0.5 rounded border font-medium truncate max-w-full ${upd.meta.cellClass}`}>
+                            {txt}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-mono">—</span>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 px-3 text-right whitespace-nowrap">
                       {age !== null && age > 0 ? (

@@ -288,6 +288,88 @@ export function computeNextAction(job: JobRecord): string | null {
   return "ติดตามปิดชุดงาน";
 }
 
+export type UpdateStatusColorKey = "blue" | "amber" | "rose" | "emerald" | "purple" | "slate";
+
+export interface UpdateStatusColorMeta {
+  key: UpdateStatusColorKey;
+  label: string;
+  swatch: string;
+  cellClass: string;
+}
+
+export const UPDATE_STATUS_COLORS: Record<UpdateStatusColorKey, UpdateStatusColorMeta> = {
+  blue: {
+    key: "blue",
+    label: "ฟ้า (ทั่วไป)",
+    swatch: "bg-[#0284c7]",
+    cellClass: "text-[#073766] bg-[#eaf4fc] border-[#073766]/15",
+  },
+  amber: {
+    key: "amber",
+    label: "เหลืองส้ม (รอติดตาม)",
+    swatch: "bg-[#f59e0b]",
+    cellClass: "text-[#92400e] bg-[#fef3c7] border-[#f59e0b]/40",
+  },
+  rose: {
+    key: "rose",
+    label: "แดง (ด่วน/ติดปัญหา)",
+    swatch: "bg-[#e11d48]",
+    cellClass: "text-[#9f1239] bg-[#ffe4e6] border-[#f43f5e]/40",
+  },
+  emerald: {
+    key: "emerald",
+    label: "เขียว (เรียบร้อย)",
+    swatch: "bg-[#10b981]",
+    cellClass: "text-[#065f46] bg-[#d1fae5] border-[#10b981]/40",
+  },
+  purple: {
+    key: "purple",
+    label: "ม่วง (บัญชี/วางบิล)",
+    swatch: "bg-[#8b5cf6]",
+    cellClass: "text-[#5b21b6] bg-[#ede9fe] border-[#8b5cf6]/40",
+  },
+  slate: {
+    key: "slate",
+    label: "เทา (หมายเหตุ)",
+    swatch: "bg-[#64748b]",
+    cellClass: "text-[#334155] bg-[#f1f5f9] border-[#94a3b8]/40",
+  },
+};
+
+/**
+ * แยกสีไฮไลท์และข้อความออกจาก updateStatus (เช่น "[amber] รอใบเสร็จ" -> { color: "amber", text: "รอใบเสร็จ" })
+ */
+export function parseUpdateStatus(raw: string | undefined | null): {
+  color: UpdateStatusColorKey;
+  text: string;
+  meta: UpdateStatusColorMeta;
+} {
+  const s = String(raw || "").trim();
+  const m = s.match(/^\[(blue|amber|rose|emerald|purple|slate)\]\s*([\s\S]*)$/i);
+  if (m) {
+    const color = m[1].toLowerCase() as UpdateStatusColorKey;
+    return {
+      color,
+      text: m[2].trim(),
+      meta: UPDATE_STATUS_COLORS[color] || UPDATE_STATUS_COLORS.blue,
+    };
+  }
+  return {
+    color: "blue",
+    text: s,
+    meta: UPDATE_STATUS_COLORS.blue,
+  };
+}
+
+/**
+ * รวมรหัสสีไฮไลท์เข้ากับข้อความ updateStatus เพื่อบันทึกลงฐานข้อมูลโดยไม่ต้องแก้ Schema
+ */
+export function formatUpdateStatus(text: string, color: UpdateStatusColorKey = "blue"): string {
+  const clean = parseUpdateStatus(text).text;
+  if (!clean) return "";
+  return color === "blue" ? clean : `[${color}] ${clean}`;
+}
+
 /**
  * จำแนกประเภทตู้คอนเทนเนอร์จากข้อความดิบใน Excel
  */
