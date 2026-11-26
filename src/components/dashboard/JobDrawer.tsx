@@ -155,9 +155,11 @@ export default function JobDrawer({
    * 3. EVENT HANDLERS — QUICK UPDATE STATUS SAVE
    * บันทึกข้อความ UPDATE STATUS ด่วนจากแบนเนอร์ด้านบน
    * ========================================================================== */
-  async function handleSaveStatusText() {
+  async function handleSaveStatusText(overrideColor?: UpdateStatusColorKey) {
     if (!selectedJob) return;
-    const formattedStatus = formatUpdateStatus(statusTextDraft, statusColorDraft);
+    const chosenColor = overrideColor ?? statusColorDraft;
+    const currentText = statusTextDraft || parseUpdateStatus(selectedJob.updateStatus).text;
+    const formattedStatus = formatUpdateStatus(currentText, chosenColor);
     setSavingStatusText(true);
     try {
       const resp = await fetch(`/api/jobs/${encodeURIComponent(selectedJob.jobNo)}`, {
@@ -259,43 +261,78 @@ export default function JobDrawer({
                 </span>
               </div>
 
-              {/* Operational Update Status Banner (แก้ไขข้อความ + เลือกสีไฮไลท์ได้โดยตรง) */}
+              {/* Operational Update Status Banner (แก้ไขข้อความ + เลือกสีไฮไลท์ได้ทันที) */}
               {(() => {
                 const parsedUpd = parseUpdateStatus(selectedJob.updateStatus);
                 return (
                   <div className="p-4 rounded-[8px] bg-slate-50 border border-slate-200 space-y-2.5 shadow-2xs">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-xs font-bold text-[#073766] uppercase tracking-wider">
-                        <span className={`w-2.5 h-2.5 rounded-full ${parsedUpd.meta.swatch}`} />
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: parsedUpd.meta.swatchHex }}
+                        />
                         <span>อัปเดตสถานะ (UPDATE STATUS)</span>
                       </div>
-                      {!inlineEditingStatus ? (
-                        <button
-                          onClick={() => {
-                            setInlineEditingStatus(true);
-                            setStatusTextDraft(parsedUpd.text);
-                            setStatusColorDraft(parsedUpd.color);
-                          }}
-                          className="text-xs text-[#f56a22] hover:text-[#e05612] font-semibold inline-flex items-center gap-1 transition-colors px-2.5 py-1 rounded bg-white border border-[#f56a22]/30 shadow-2xs cursor-pointer"
-                          title="คลิกเพื่อแก้ไขข้อความและสีไฮไลท์"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>แก้ไขข้อความ / สีไฮไลท์</span>
-                        </button>
-                      ) : null}
+
+                      <div className="flex items-center gap-2">
+                        {/* จุดสีไฮไลท์ด่วน 1-Click (คลิกเปลี่ยนสีได้ทันทีแม้ยังไม่เปิดโหมดแก้ไขข้อความ) */}
+                        {!inlineEditingStatus && parsedUpd.text && (
+                          <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-full border border-slate-200">
+                            <span className="text-[10.5px] text-slate-500 mr-0.5">สี:</span>
+                            {(Object.keys(UPDATE_STATUS_COLORS) as UpdateStatusColorKey[]).map((ck) => {
+                              const cMeta = UPDATE_STATUS_COLORS[ck];
+                              const active = parsedUpd.color === ck;
+                              return (
+                                <button
+                                  key={ck}
+                                  type="button"
+                                  disabled={savingStatusText}
+                                  onClick={() => {
+                                    setStatusColorDraft(ck);
+                                    handleSaveStatusText(ck);
+                                  }}
+                                  title={`เปลี่ยนสีไฮไลท์เป็น: ${cMeta.label}`}
+                                  aria-label={`เปลี่ยนสีไฮไลท์เป็น ${cMeta.label}`}
+                                  className={`w-4 h-4 rounded-full transition-transform cursor-pointer ${
+                                    active ? "scale-125 ring-2 ring-offset-1 ring-slate-500" : "opacity-75 hover:opacity-100 hover:scale-110"
+                                  }`}
+                                  style={{ backgroundColor: cMeta.swatchHex }}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {!inlineEditingStatus ? (
+                          <button
+                            onClick={() => {
+                              setInlineEditingStatus(true);
+                              setStatusTextDraft(parsedUpd.text);
+                              setStatusColorDraft(parsedUpd.color);
+                            }}
+                            className="text-xs text-[#f56a22] hover:text-[#e05612] font-semibold inline-flex items-center gap-1 transition-colors px-2.5 py-1 rounded bg-white border border-[#f56a22]/30 shadow-2xs cursor-pointer"
+                            title="คลิกเพื่อแก้ไขข้อความและสีไฮไลท์"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>แก้ไขข้อความ</span>
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
 
                     {!inlineEditingStatus ? (
                       <div
-                        className={`text-[13.5px] font-medium whitespace-pre-line leading-relaxed p-3 rounded-[6px] border min-h-[50px] ${
+                        className="text-[13.5px] font-medium whitespace-pre-line leading-relaxed p-3 rounded-[6px] border min-h-[50px]"
+                        style={
                           parsedUpd.text
-                            ? parsedUpd.meta.cellClass
-                            : "bg-white text-[#6e7e91] border-slate-200"
-                        }`}
+                            ? parsedUpd.meta.cellStyle
+                            : { backgroundColor: "#ffffff", color: "#6e7e91", borderColor: "#e2e8f0" }
+                        }
                       >
                         {parsedUpd.text || (
                           <span className="text-[#6e7e91] italic text-xs font-normal">
-                            ยังไม่มีข้อมูลอัปเดตสถานะ (คลิก &quot;แก้ไขข้อความ / สีไฮไลท์&quot; ด้านบนเพื่อเพิ่มสถานะ)
+                            ยังไม่มีข้อมูลอัปเดตสถานะ (คลิก &quot;แก้ไขข้อความ&quot; ด้านบนเพื่อเพิ่มสถานะและเลือกสีไฮไลท์)
                           </span>
                         )}
                       </div>
@@ -315,12 +352,18 @@ export default function JobDrawer({
                                 type="button"
                                 onClick={() => setStatusColorDraft(ck)}
                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-semibold border transition-colors cursor-pointer ${
-                                  active
-                                    ? `${cMeta.cellClass} ring-2 ring-offset-1 ring-slate-400`
-                                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                  active ? "ring-2 ring-offset-1 ring-slate-400" : "hover:bg-slate-50"
                                 }`}
+                                style={
+                                  active
+                                    ? cMeta.cellStyle
+                                    : { backgroundColor: "#ffffff", color: "#475569", borderColor: "#e2e8f0" }
+                                }
                               >
-                                <span className={`w-2.5 h-2.5 rounded-full ${cMeta.swatch}`} />
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: cMeta.swatchHex }}
+                                />
                                 <span>{cMeta.label}</span>
                               </button>
                             );
@@ -332,9 +375,8 @@ export default function JobDrawer({
                           onChange={(e) => setStatusTextDraft(e.target.value)}
                           rows={4}
                           placeholder="พิมพ์ข้อความอัปเดตสถานะ เช่น ปิดชุดขึ้นบัญชี 26/11/2026 หรือ รอใบเสร็จค่า DETENTION..."
-                          className={`w-full p-3 rounded-[6px] border text-[13.5px] font-medium focus:outline-none leading-relaxed ${
-                            UPDATE_STATUS_COLORS[statusColorDraft].cellClass
-                          }`}
+                          className="w-full p-3 rounded-[6px] border text-[13.5px] font-medium focus:outline-none leading-relaxed"
+                          style={UPDATE_STATUS_COLORS[statusColorDraft].cellStyle}
                           autoFocus
                         />
                         <div className="flex items-center justify-end gap-2">
@@ -347,7 +389,7 @@ export default function JobDrawer({
                           </button>
                           <button
                             type="button"
-                            onClick={handleSaveStatusText}
+                            onClick={() => handleSaveStatusText()}
                             disabled={savingStatusText}
                             className="px-4 py-1.5 rounded-[6px] bg-[#f56a22] hover:bg-[#e05612] disabled:opacity-50 text-white text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                           >
@@ -752,12 +794,18 @@ export default function JobDrawer({
                         type="button"
                         onClick={() => setStatusColorDraft(ck)}
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors cursor-pointer ${
-                          active
-                            ? `${cMeta.cellClass} ring-2 ring-offset-1 ring-slate-400`
-                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                          active ? "ring-2 ring-offset-1 ring-slate-400" : "hover:bg-slate-50"
                         }`}
+                        style={
+                          active
+                            ? cMeta.cellStyle
+                            : { backgroundColor: "#ffffff", color: "#475569", borderColor: "#e2e8f0" }
+                        }
                       >
-                        <span className={`w-2 h-2 rounded-full ${cMeta.swatch}`} />
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: cMeta.swatchHex }}
+                        />
                         <span>{cMeta.label}</span>
                       </button>
                     );
@@ -768,9 +816,8 @@ export default function JobDrawer({
                   name="updateStatus"
                   defaultValue={parseUpdateStatus(selectedJob.updateStatus).text}
                   placeholder="เช่น ปิดชุดขึ้นบัญชี 26/11/2026 หรือ รอใบเสร็จค่า DETENTION..."
-                  className={`w-full h-24 p-3 rounded-[6px] border text-[13.5px] font-medium leading-relaxed ${
-                    UPDATE_STATUS_COLORS[statusColorDraft].cellClass
-                  }`}
+                  className="w-full h-24 p-3 rounded-[6px] border text-[13.5px] font-medium leading-relaxed"
+                  style={UPDATE_STATUS_COLORS[statusColorDraft].cellStyle}
                 />
               </div>
 

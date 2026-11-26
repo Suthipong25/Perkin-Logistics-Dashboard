@@ -1042,13 +1042,14 @@ export default function JobsTable({
                       {j.csName || "—"}
                     </td>
 
-                    {/* Update Status Banner Text (รองรับสีไฮไลท์) */}
+                    {/* Update Status Banner Text (รองรับสีไฮไลท์ด้วย inline style 100%) */}
                     <td className="py-3 px-3 text-[12px] max-w-[240px]">
                       {(() => {
                         const upd = parseUpdateStatus(j.updateStatus);
                         return upd.text ? (
                           <div
-                            className={`line-clamp-2 font-medium px-2 py-1 rounded border leading-tight text-[11.5px] ${upd.meta.cellClass}`}
+                            className="line-clamp-2 font-medium px-2 py-1 rounded border leading-tight text-[11.5px]"
+                            style={upd.meta.cellStyle}
                             title={upd.text}
                           >
                             {upd.text}

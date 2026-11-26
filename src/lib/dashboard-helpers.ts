@@ -294,7 +294,9 @@ export interface UpdateStatusColorMeta {
   key: UpdateStatusColorKey;
   label: string;
   swatch: string;
+  swatchHex: string;
   cellClass: string;
+  cellStyle: { backgroundColor: string; color: string; borderColor: string };
 }
 
 export const UPDATE_STATUS_COLORS: Record<UpdateStatusColorKey, UpdateStatusColorMeta> = {
@@ -302,37 +304,49 @@ export const UPDATE_STATUS_COLORS: Record<UpdateStatusColorKey, UpdateStatusColo
     key: "blue",
     label: "ฟ้า (ทั่วไป)",
     swatch: "bg-[#0284c7]",
+    swatchHex: "#0284c7",
     cellClass: "text-[#073766] bg-[#eaf4fc] border-[#073766]/15",
+    cellStyle: { backgroundColor: "#eaf4fc", color: "#073766", borderColor: "#bdd8f1" },
   },
   amber: {
     key: "amber",
     label: "เหลืองส้ม (รอติดตาม)",
     swatch: "bg-[#f59e0b]",
+    swatchHex: "#f59e0b",
     cellClass: "text-[#92400e] bg-[#fef3c7] border-[#f59e0b]/40",
+    cellStyle: { backgroundColor: "#fef3c7", color: "#92400e", borderColor: "#fcd34d" },
   },
   rose: {
     key: "rose",
     label: "แดง (ด่วน/ติดปัญหา)",
     swatch: "bg-[#e11d48]",
+    swatchHex: "#e11d48",
     cellClass: "text-[#9f1239] bg-[#ffe4e6] border-[#f43f5e]/40",
+    cellStyle: { backgroundColor: "#ffe4e6", color: "#9f1239", borderColor: "#fda4af" },
   },
   emerald: {
     key: "emerald",
     label: "เขียว (เรียบร้อย)",
     swatch: "bg-[#10b981]",
+    swatchHex: "#10b981",
     cellClass: "text-[#065f46] bg-[#d1fae5] border-[#10b981]/40",
+    cellStyle: { backgroundColor: "#d1fae5", color: "#065f46", borderColor: "#6ee7b7" },
   },
   purple: {
     key: "purple",
     label: "ม่วง (บัญชี/วางบิล)",
     swatch: "bg-[#8b5cf6]",
+    swatchHex: "#8b5cf6",
     cellClass: "text-[#5b21b6] bg-[#ede9fe] border-[#8b5cf6]/40",
+    cellStyle: { backgroundColor: "#ede9fe", color: "#5b21b6", borderColor: "#c4b5fd" },
   },
   slate: {
     key: "slate",
     label: "เทา (หมายเหตุ)",
     swatch: "bg-[#64748b]",
+    swatchHex: "#64748b",
     cellClass: "text-[#334155] bg-[#f1f5f9] border-[#94a3b8]/40",
+    cellStyle: { backgroundColor: "#f1f5f9", color: "#334155", borderColor: "#cbd5e1" },
   },
 };
 

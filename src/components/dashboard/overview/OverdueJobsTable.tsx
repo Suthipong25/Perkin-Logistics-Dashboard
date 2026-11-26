@@ -170,7 +170,10 @@ export function OverdueJobsTable({
                         const upd = parseUpdateStatus(j.updateStatus);
                         const txt = upd.text || j.remark;
                         return txt ? (
-                          <span className={`inline-block px-2 py-0.5 rounded border font-medium truncate max-w-full ${upd.meta.cellClass}`}>
+                          <span
+                            className="inline-block px-2 py-0.5 rounded border font-medium truncate max-w-full"
+                            style={upd.meta.cellStyle}
+                          >
                             {txt}
                           </span>
                         ) : (
