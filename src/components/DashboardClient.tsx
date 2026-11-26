@@ -489,6 +489,7 @@ export default function DashboardClient({
                 setMonthFilter={setMonthFilter}
                 onSelectJobNo={(jobNo) => setSelectedJobNo(jobNo)}
                 initialOverdueOnly={jobsOverdueOnly}
+                externalQ={globalQ}
                 highlightedJobNo={highlightedJobNo}
               />
             )}

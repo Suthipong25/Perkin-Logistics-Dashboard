@@ -87,6 +87,8 @@ export interface JobsTableProps {
   initialOverdueOnly?: boolean;
   /** ตัวกรองขั้นตอนศุลกากรเริ่มต้น ("all" | "0109" | "0209" | "0309" | "0409") */
   initialCustomsFilter?: string;
+  /** คำค้นหาจากช่องค้นหาด่วนด้านบน (Global Search Bar) */
+  externalQ?: string;
   /** รหัสงานที่เพิ่งได้รับการแก้ไขหรืออัปเดต (เพื่อแสดง Flash Highlight) */
   highlightedJobNo?: string | null;
 }
@@ -150,13 +152,20 @@ export default function JobsTable({
   onSelectJobNo,
   initialOverdueOnly = false,
   initialCustomsFilter = "all",
+  externalQ = "",
   highlightedJobNo = null,
 }: JobsTableProps) {
   /* ==========================================================================
    * 1. LOCAL FILTER STATE
    * ========================================================================== */
   // คำค้นหาในตาราง
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(externalQ);
+  useEffect(() => {
+    if (externalQ !== undefined) {
+      setQ(externalQ);
+      setPageNum(1);
+    }
+  }, [externalQ]);
   // กรองตามบริการ ("all" หรือชื่อบริการ)
   const [serviceFilter, setServiceFilter] = useState<string>("all");
   // กรองตามเดือนแบบ Checklist (เลือกได้หลายเดือน; ว่าง = ทุกเดือน)
@@ -357,9 +366,11 @@ export default function JobsTable({
       });
     }
 
-    // 2.6 กรองค้นหาข้อความ
-    if (q.trim()) {
-      const low = q.toLowerCase();
+    // 2.6 กรองค้นหาข้อความ (ตัดช่องว่างหน้า-หลัง และรองรับการค้นหา Job No แบบมีหรือไม่มีช่องว่าง)
+    const trimmedQ = q.trim();
+    if (trimmedQ) {
+      const low = trimmedQ.toLowerCase();
+      const compactLow = low.replace(/\s+/g, "");
       list = list.filter((j) =>
         [
           j.jobNo,
@@ -386,11 +397,13 @@ export default function JobsTable({
           j.depoPort,
           j.placeOfDelivery,
           j.updateStatus,
-        ].some((v) =>
-          String(v || "")
-            .toLowerCase()
-            .includes(low)
-        )
+        ].some((v) => {
+          const str = String(v || "").toLowerCase();
+          return (
+            str.includes(low) ||
+            (compactLow.length >= 4 && str.replace(/\s+/g, "").includes(compactLow))
+          );
+        })
       );
     }
 
