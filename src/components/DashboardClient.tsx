@@ -167,9 +167,6 @@ export default function DashboardClient({
   // ตัวเลือกส่งต่อการกรองเฉพาะงานเกินกำหนดจากหน้า Overview ไปยัง Jobs Table
   const [jobsOverdueOnly, setJobsOverdueOnly] = useState<boolean>(false);
 
-  // คำค้นหาใน Top Search bar
-  const [globalQ, setGlobalQ] = useState("");
-
   // รหัสงานที่เปิดใน Drawer (null หากปิด Drawer)
   const [selectedJobNo, setSelectedJobNo] = useState<string | null>(
     initialJobNo || null
@@ -386,36 +383,6 @@ export default function DashboardClient({
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            {/* กล่องค้นหาด่วน (Quick Global Search) */}
-            <div className="hidden md:flex items-center relative w-[240px] xl:w-[280px] shrink-0">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
-              <input
-                id="globalSearchInput"
-                type="search"
-                aria-label="ค้นหาด่วนตาม Job No, ลูกค้า หรือ B/L"
-                value={globalQ}
-                onChange={(e) => {
-                  setGlobalQ(e.target.value);
-                  if (page !== "jobs") setPage("jobs");
-                }}
-                placeholder="ค้นหา Job No, ลูกค้า, B/L..."
-                className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:border-[#f56a22] focus:ring-2 focus:ring-[#f56a22]/15 outline-none transition-[background-color,border-color,box-shadow] duration-150"
-              />
-            </div>
-
-            {/* แสดงสถานะฐานข้อมูลระบบ */}
-            <div className="hidden xl:flex items-center gap-2 px-3 h-9 rounded-lg bg-emerald-50/80 border border-emerald-200 text-emerald-800 text-xs font-semibold whitespace-nowrap shrink-0">
-              <span className="relative flex h-2 w-2 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
-              </span>
-              <span suppressHydrationWarning>
-                {page === "transport"
-                  ? `รถขนส่งในประเทศ · ${fmtNum(transport.length)} เที่ยว`
-                  : `ออนไลน์ · ${fmtNum(jobs.length)} ชิปเมนท์`}
-              </span>
-            </div>
-
             {/* ปุ่มกดรีเฟรชข้อมูล */}
             <button
               type="button"
@@ -489,7 +456,6 @@ export default function DashboardClient({
                 setMonthFilter={setMonthFilter}
                 onSelectJobNo={(jobNo) => setSelectedJobNo(jobNo)}
                 initialOverdueOnly={jobsOverdueOnly}
-                externalQ={globalQ}
                 highlightedJobNo={highlightedJobNo}
               />
             )}

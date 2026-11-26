@@ -87,8 +87,6 @@ export interface JobsTableProps {
   initialOverdueOnly?: boolean;
   /** ตัวกรองขั้นตอนศุลกากรเริ่มต้น ("all" | "0109" | "0209" | "0309" | "0409") */
   initialCustomsFilter?: string;
-  /** คำค้นหาจากช่องค้นหาด่วนด้านบน (Global Search Bar) */
-  externalQ?: string;
   /** รหัสงานที่เพิ่งได้รับการแก้ไขหรืออัปเดต (เพื่อแสดง Flash Highlight) */
   highlightedJobNo?: string | null;
 }
@@ -152,20 +150,13 @@ export default function JobsTable({
   onSelectJobNo,
   initialOverdueOnly = false,
   initialCustomsFilter = "all",
-  externalQ = "",
   highlightedJobNo = null,
 }: JobsTableProps) {
   /* ==========================================================================
    * 1. LOCAL FILTER STATE
    * ========================================================================== */
   // คำค้นหาในตาราง
-  const [q, setQ] = useState(externalQ);
-  useEffect(() => {
-    if (externalQ !== undefined) {
-      setQ(externalQ);
-      setPageNum(1);
-    }
-  }, [externalQ]);
+  const [q, setQ] = useState("");
   // กรองตามบริการ ("all" หรือชื่อบริการ)
   const [serviceFilter, setServiceFilter] = useState<string>("all");
   // กรองตามเดือนแบบ Checklist (เลือกได้หลายเดือน; ว่าง = ทุกเดือน)
