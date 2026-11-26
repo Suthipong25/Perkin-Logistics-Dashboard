@@ -442,10 +442,25 @@ export function StagingUploadView({
             : "";
 
           const metaDiffs: string[] = [];
+          const incCust = String(r.customer || "").trim();
+          const exCust = String(existing?.customer || "").trim();
+          const isCustChanged = Boolean(
+            existsInMaster &&
+              incCust &&
+              incCust !== "—" &&
+              incCust !== "ลูกค้าใหม่" &&
+              incCust !== exCust
+          );
+          if (isCustChanged) {
+            metaDiffs.push(`ลูกค้า: ${exCust || "-"} ➔ ${incCust}`);
+          }
           const incBl = String(r.bl || r.mbl || r.hbl || "").trim();
           const exBl = String(existing?.mbl || existing?.bl || existing?.hbl || "").trim();
+          const hasBlCol = Boolean(r.hasBlColumn || !rowIsCustoms);
           if (existsInMaster && incBl && incBl !== "—" && incBl !== exBl) {
             metaDiffs.push(`BL: ${exBl || "-"} ➔ ${incBl}`);
+          } else if (existsInMaster && !incBl && exBl && (hasBlCol || isCustChanged)) {
+            metaDiffs.push(`BL: ${exBl} ➔ (ล้างค่า B/L)`);
           }
           const incInv = String(r.invoiceNo || "").trim();
           const exInv = String(existing?.invoiceNo || "").trim();
@@ -456,6 +471,16 @@ export function StagingUploadView({
           const exCntr = String(existing?.containerType || "").trim();
           if (existsInMaster && incCntr && incCntr !== "—" && incCntr !== exCntr) {
             metaDiffs.push(`Volume: ${exCntr || "-"} ➔ ${incCntr}`);
+          }
+          const incComm = String(r.commodity || "").trim();
+          const exComm = String(existing?.commodity || "").trim();
+          if (existsInMaster && incComm && incComm !== "—" && incComm !== exComm) {
+            metaDiffs.push(`สินค้า: ${exComm || "-"} ➔ ${incComm}`);
+          }
+          const incCs = String(r.csName || "").trim();
+          const exCs = String(existing?.csName || "").trim();
+          if (existsInMaster && incCs && incCs !== "—" && incCs !== exCs) {
+            metaDiffs.push(`CS: ${exCs || "-"} ➔ ${incCs}`);
           }
           const isMetaChanged = existsInMaster && metaDiffs.length > 0;
           const metaChangeDiff = metaDiffs.join(" • ");
@@ -538,6 +563,9 @@ export function StagingUploadView({
             cbm: r.cbm ?? null,
             csName: r.csName || undefined,
             bl: r.bl || undefined,
+            mbl: r.mbl || undefined,
+            hbl: r.hbl || undefined,
+            hasBlColumn: Boolean(r.hasBlColumn || !rowIsCustoms),
             commodity: r.commodity || undefined,
             carrier: r.carrier || undefined,
             vessel: r.vessel || r.feeder || undefined,
@@ -721,9 +749,15 @@ export function StagingUploadView({
           if (stg.bl && stg.bl !== "—") {
             target.bl = stg.bl;
             target.mbl = (stg as any).mbl || stg.bl;
+          } else if (stg.fileType !== "customs" && !stg.bl && !(stg as any).mbl && !(stg as any).hbl) {
+            target.bl = "";
+            target.mbl = "";
+            target.hbl = "";
           }
           if ((stg as any).mbl && (stg as any).mbl !== "—") target.mbl = (stg as any).mbl;
+          else if (stg.fileType !== "customs" && (stg as any).hasBlColumn && !(stg as any).mbl) target.mbl = "";
           if ((stg as any).hbl && (stg as any).hbl !== "—") target.hbl = (stg as any).hbl;
+          else if (stg.fileType !== "customs" && (stg as any).hasBlColumn && !(stg as any).hbl) target.hbl = "";
           if (stg.csName && stg.csName !== "—") target.csName = stg.csName;
           if (
             stg.customer &&
@@ -731,11 +765,12 @@ export function StagingUploadView({
             stg.customer !== "ลูกค้าใหม่"
           ) {
             target.customer = stg.customer;
+            target.consignee = stg.customer;
           }
           if (stg.commodity) target.commodity = stg.commodity;
           if (stg.containerType) target.containerType = stg.containerType;
-          if (stg.grossWeight) target.grossWeight = stg.grossWeight;
-          if (stg.cbm) target.cbm = stg.cbm;
+          if (stg.grossWeight !== null && stg.grossWeight !== undefined) target.grossWeight = stg.grossWeight;
+          if (stg.cbm !== null && stg.cbm !== undefined) target.cbm = stg.cbm;
           if (stg.invoiceNo && stg.invoiceNo !== "—") target.invoiceNo = stg.invoiceNo;
 
           if (stg.isStatusChanged && stg.hasExplicitStatus && stg.status) {

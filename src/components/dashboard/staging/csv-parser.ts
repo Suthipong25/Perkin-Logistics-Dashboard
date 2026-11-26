@@ -47,11 +47,15 @@ export function parseCSVText(
       : colIdx("CUSTOMER");
   const idxDecl = colIdx("DECLARATION");
   const idxInv =
-    colIdx("INVOICE") !== -1 ? colIdx("INVOICE") : colIdx("INVOIVE");
+    colIdx("INVOICE") !== -1
+      ? colIdx("INVOICE")
+      : colIdx("INVOIVE") !== -1
+      ? colIdx("INVOIVE")
+      : colIdx("CUS.INV");
   const idxSubmit = colIdx("SUBMIT");
   const idxStatus = colIdx("STATUS");
   const idxO409 = colIdx("O4O9");
-  const idxO309 = colIdx("O3O9");
+  const idxO309 = colIdx("O309");
   const idxO209 = colIdx("O2O9");
   const idxO109 = colIdx("O1O9");
   const idxETD = colIdx("ETD");
@@ -61,7 +65,18 @@ export function parseCSVText(
   const idxCntr = colIdx("CONTAINER");
   const idxCS = colIdx("CS NAME");
   const idxMBL = colIdx("MBL");
+  const idxHBL = colIdx("HBL");
   const idxCommodity = colIdx("COMMODITY");
+
+  const toIsoDate = (raw: string): string => {
+    const s = raw.trim();
+    if (!s) return "";
+    const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (dmy) {
+      return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+    }
+    return s.slice(0, 10);
+  };
 
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const line = lines[i];
@@ -99,9 +114,15 @@ export function parseCSVText(
     const customer = clean(cols[idxCustomer]);
     const declarationNo = idxDecl !== -1 ? clean(cols[idxDecl]) : "";
     const invoiceNo = idxInv !== -1 ? clean(cols[idxInv]) : "";
-    const submitDate = idxSubmit !== -1 ? clean(cols[idxSubmit]) : "";
-    const etd = idxETD !== -1 ? clean(cols[idxETD]) : "";
-    const eta = idxETA !== -1 ? clean(cols[idxETA]) : "";
+    const submitDate = idxSubmit !== -1 ? toIsoDate(clean(cols[idxSubmit])) : "";
+    const etd = idxETD !== -1 ? toIsoDate(clean(cols[idxETD])) : "";
+    const eta = idxETA !== -1 ? toIsoDate(clean(cols[idxETA])) : "";
+    const rawMbl = idxMBL !== -1 ? clean(cols[idxMBL]) : "";
+    const rawHbl = idxHBL !== -1 ? clean(cols[idxHBL]) : "";
+    const blVal = rawMbl || rawHbl;
+    const cntrVal = idxCntr !== -1 ? clean(cols[idxCntr]) : "";
+    const commVal = idxCommodity !== -1 ? clean(cols[idxCommodity]) : "";
+    const csVal = idxCS !== -1 ? clean(cols[idxCS]) : "";
     const rawStatus = idxStatus !== -1 ? clean(cols[idxStatus]) : "";
     const o409 = idxO409 !== -1 ? clean(cols[idxO409]) : "";
     const o309 = idxO309 !== -1 ? clean(cols[idxO309]) : "";
@@ -176,6 +197,24 @@ export function parseCSVText(
         `สถานะใบขน: ${existing.customsStatus || "-"} ➔ ${cStatus}`
       );
     }
+    if (existsInMaster) {
+      const exCust = (existing?.customer || "").trim();
+      const isCustChanged = Boolean(customer && customer !== "—" && customer !== exCust);
+      if (isCustChanged) customsDiffs.push(`ลูกค้า: ${exCust || "-"} ➔ ${customer}`);
+      const exBl = (existing?.mbl || existing?.bl || existing?.hbl || "").trim();
+      if (blVal && blVal !== exBl) customsDiffs.push(`BL: ${exBl || "-"} ➔ ${blVal}`);
+      else if (!blVal && exBl && (idxMBL !== -1 || idxHBL !== -1 || isCustChanged)) {
+        customsDiffs.push(`BL: ${exBl} ➔ (ล้างค่า B/L)`);
+      }
+      const exInv = (existing?.invoiceNo || "").trim();
+      if (invoiceNo && invoiceNo !== exInv) customsDiffs.push(`INV: ${exInv || "-"} ➔ ${invoiceNo}`);
+      const exCntr = (existing?.containerType || "").trim();
+      if (cntrVal && cntrVal !== exCntr) customsDiffs.push(`Volume: ${exCntr || "-"} ➔ ${cntrVal}`);
+      const exComm = (existing?.commodity || "").trim();
+      if (commVal && commVal !== exComm) customsDiffs.push(`สินค้า: ${exComm || "-"} ➔ ${commVal}`);
+      const exCs = (existing?.csName || "").trim();
+      if (csVal && csVal !== exCs) customsDiffs.push(`CS: ${exCs || "-"} ➔ ${csVal}`);
+    }
     const isCustomsChanged = existsInMaster && customsDiffs.length > 0;
     const customsChangeDiff = customsDiffs.join(" • ");
 
@@ -223,12 +262,12 @@ export function parseCSVText(
       etd: etd || undefined,
       eta: eta || undefined,
       submitDate: submitDate || undefined,
-      containerType: idxCntr !== -1 ? clean(cols[idxCntr]) : undefined,
+      containerType: cntrVal || undefined,
       grossWeight: gwVal,
       cbm: cbmVal,
-      csName: idxCS !== -1 ? clean(cols[idxCS]) : undefined,
-      bl: idxMBL !== -1 ? clean(cols[idxMBL]) : undefined,
-      commodity: idxCommodity !== -1 ? clean(cols[idxCommodity]) : undefined,
+      csName: csVal || undefined,
+      bl: blVal || undefined,
+      commodity: commVal || undefined,
       isPastOrOld,
       isBlankDummy,
       isGenuineNew,

@@ -23,6 +23,10 @@ export interface StagingRecord {
   cbm?: number | null;
   csName?: string;
   bl?: string;
+  mbl?: string;
+  hbl?: string;
+  hasBlColumn?: boolean;
+  isChanged?: boolean;
   commodity?: string;
   carrier?: string;
   vessel?: string;

@@ -240,6 +240,8 @@ function checkJobDiff(
     hbl?: string | null;
     invoiceNo?: string | null;
     containerType?: string | null;
+    commodity?: string | null;
+    hasBlColumn?: boolean;
   },
   matchJob?: JobRecord
 ): JobDiffResult {
@@ -307,10 +309,20 @@ function checkJobDiff(
   const isStatusChanged = statusDiffs.length > 0;
 
   const metaDiffs: string[] = [];
+  const incCust = String(incoming.customer || "").trim();
+  const exCust = String(matchJob.customer || "").trim();
+  const isCustChanged = Boolean(
+    incCust && incCust !== "—" && incCust !== "ลูกค้าใหม่" && incCust !== exCust
+  );
+  if (isCustChanged) {
+    metaDiffs.push(`ลูกค้า: ${exCust || "-"} ➔ ${incCust}`);
+  }
   const incBl = String(incoming.bl || incoming.mbl || incoming.hbl || "").trim();
   const exBl = String(matchJob.mbl || matchJob.bl || matchJob.hbl || "").trim();
   if (incBl && incBl !== "—" && incBl !== exBl) {
     metaDiffs.push(`BL: ${exBl || "-"} ➔ ${incBl}`);
+  } else if (!incBl && exBl && (incoming.hasBlColumn || isCustChanged)) {
+    metaDiffs.push(`BL: ${exBl} ➔ (ล้างค่า B/L)`);
   }
   const incInv = String(incoming.invoiceNo || "").trim();
   const exInv = String(matchJob.invoiceNo || "").trim();
@@ -322,15 +334,15 @@ function checkJobDiff(
   if (incCntr && incCntr !== "—" && incCntr !== exCntr) {
     metaDiffs.push(`Volume/Container: ${exCntr || "-"} ➔ ${incCntr}`);
   }
+  const incComm = String(incoming.commodity || "").trim();
+  const exComm = String(matchJob.commodity || "").trim();
+  if (incComm && incComm !== "—" && incComm !== exComm) {
+    metaDiffs.push(`สินค้า: ${exComm || "-"} ➔ ${incComm}`);
+  }
   const incCs = String(incoming.csName || "").trim();
   const exCs = String(matchJob.csName || "").trim();
   if (incCs && incCs !== "—" && incCs !== exCs) {
     metaDiffs.push(`CS: ${exCs || "-"} ➔ ${incCs}`);
-  }
-  const incCust = String(incoming.customer || "").trim();
-  const exCust = String(matchJob.customer || "").trim();
-  if (incCust && incCust !== "—" && incCust !== "ลูกค้าใหม่" && incCust !== exCust) {
-    metaDiffs.push(`ลูกค้า: ${exCust || "-"} ➔ ${incCust}`);
   }
 
   const allDiffs = [...dateDiffs, ...customsDiffs, ...statusDiffs, ...metaDiffs];
@@ -898,9 +910,11 @@ function parseSheetRows(
         hasExplicitStatus,
         csName: val(idxCs),
         customer,
+        commodity: val(idxCommodity),
         bl: val(idxMbl) || val(idxHbl),
         mbl: rawMbl,
         hbl: rawHbl,
+        hasBlColumn: idxMbl !== -1 || idxHbl !== -1,
       },
       match
     );
@@ -930,6 +944,7 @@ function parseSheetRows(
       bl: val(idxMbl) || val(idxHbl),
       mbl: rawMbl,
       hbl: rawHbl,
+      hasBlColumn: idxMbl !== -1 || idxHbl !== -1,
       commodity: val(idxCommodity),
       actionType,
       isChanged,

@@ -278,9 +278,15 @@ export function buildUpdatedJob(existing: JobRecord, stg: any): JobRecord {
   if (stg.bl && stg.bl !== "—") {
     updated.bl = stg.bl;
     updated.mbl = stg.mbl || stg.bl;
+  } else if (stg.fileType !== "customs" && !stg.bl && !stg.mbl && !stg.hbl) {
+    updated.bl = "";
+    updated.mbl = "";
+    updated.hbl = "";
   }
   if (stg.mbl && stg.mbl !== "—") updated.mbl = stg.mbl;
+  else if (stg.fileType !== "customs" && stg.hasBlColumn && !stg.mbl) updated.mbl = "";
   if (stg.hbl && stg.hbl !== "—") updated.hbl = stg.hbl;
+  else if (stg.fileType !== "customs" && stg.hasBlColumn && !stg.hbl) updated.hbl = "";
   if (stg.invoiceNo && stg.invoiceNo !== "—") updated.invoiceNo = stg.invoiceNo;
   if (stg.csName && stg.csName !== "—") updated.csName = stg.csName;
   if (
@@ -289,11 +295,12 @@ export function buildUpdatedJob(existing: JobRecord, stg: any): JobRecord {
     stg.customer !== "ลูกค้าใหม่"
   ) {
     updated.customer = stg.customer;
+    updated.consignee = stg.customer;
   }
   if (stg.commodity) updated.commodity = stg.commodity;
   if (stg.containerType) updated.containerType = stg.containerType;
-  if (stg.grossWeight) updated.grossWeight = stg.grossWeight;
-  if (stg.cbm) updated.cbm = stg.cbm;
+  if (stg.grossWeight !== null && stg.grossWeight !== undefined) updated.grossWeight = stg.grossWeight;
+  if (stg.cbm !== null && stg.cbm !== undefined) updated.cbm = stg.cbm;
 
   if (stg.isStatusChanged && stg.hasExplicitStatus && stg.status) {
     updated.status = stg.status;
