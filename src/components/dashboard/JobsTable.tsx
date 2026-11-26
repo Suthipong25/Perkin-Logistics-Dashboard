@@ -979,9 +979,9 @@ export default function JobsTable({
                       {j.mbl || j.hbl || j.bl ? (
                         <div>
                           <div className="font-semibold text-[#102238]">
-                            {j.mbl || j.bl}
+                            {j.mbl || j.bl || j.hbl}
                           </div>
-                          {j.hbl && j.mbl && j.hbl !== j.mbl && (
+                          {j.hbl && (j.mbl || j.bl) && j.hbl !== (j.mbl || j.bl) && (
                             <div className="text-[10.5px] text-[#6e7e91] font-mono">
                               HBL: {j.hbl}
                             </div>

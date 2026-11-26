@@ -87,14 +87,19 @@ export function mergeStagingJobRows(prev: any, incoming: any) {
   if (incoming.flightTime && incoming.flightTime !== "00:00")
     merged.flightTime = incoming.flightTime;
   if (incoming.linerBooking) merged.linerBooking = incoming.linerBooking;
+  if (incoming.hasBlColumn) merged.hasBlColumn = true;
   if (incoming.bl && incoming.bl !== "—") merged.bl = incoming.bl;
   if (incoming.mbl && incoming.mbl !== "—") merged.mbl = incoming.mbl;
   if (incoming.hbl && incoming.hbl !== "—") merged.hbl = incoming.hbl;
   if (incoming.invoiceNo && incoming.invoiceNo !== "—") merged.invoiceNo = incoming.invoiceNo;
   if (incoming.commodity) merged.commodity = incoming.commodity;
   if (incoming.containerType) merged.containerType = incoming.containerType;
-  if (incoming.grossWeight) merged.grossWeight = incoming.grossWeight;
-  if (incoming.cbm) merged.cbm = incoming.cbm;
+  if (incoming.grossWeight !== null && incoming.grossWeight !== undefined) {
+    merged.grossWeight = incoming.grossWeight;
+  }
+  if (incoming.cbm !== null && incoming.cbm !== undefined) {
+    merged.cbm = incoming.cbm;
+  }
   if (incoming.csName && incoming.csName !== "—") merged.csName = incoming.csName;
   if (
     incoming.customer &&
@@ -261,137 +266,9 @@ export async function syncTransportToLocalMirror(
   }
 }
 
-/**
- * แปลง Staging Record และผสานลงใน Job เดิมที่มีอยู่
- */
-export function buildUpdatedJob(existing: JobRecord, stg: any): JobRecord {
-  const updated = { ...existing };
-  if (stg.etd) updated.etd = stg.etd;
-  if (stg.eta) updated.eta = stg.eta;
-  if (stg.clearDate) updated.clearDate = stg.clearDate;
-  if (stg.flightTime) updated.flightTime = stg.flightTime;
-  if (stg.vessel) updated.vessel = stg.vessel;
-  if (stg.feeder) updated.feeder = stg.feeder;
-  if (stg.flightNo || stg.flight)
-    (updated as any).flightNo = stg.flightNo || stg.flight;
-  if (stg.carrier) updated.carrier = stg.carrier;
-  if (stg.bl && stg.bl !== "—") {
-    updated.bl = stg.bl;
-    updated.mbl = stg.mbl || stg.bl;
-  } else if (stg.fileType !== "customs" && !stg.bl && !stg.mbl && !stg.hbl) {
-    updated.bl = "";
-    updated.mbl = "";
-    updated.hbl = "";
-  }
-  if (stg.mbl && stg.mbl !== "—") updated.mbl = stg.mbl;
-  else if (stg.fileType !== "customs" && stg.hasBlColumn && !stg.mbl) updated.mbl = "";
-  if (stg.hbl && stg.hbl !== "—") updated.hbl = stg.hbl;
-  else if (stg.fileType !== "customs" && stg.hasBlColumn && !stg.hbl) updated.hbl = "";
-  if (stg.invoiceNo && stg.invoiceNo !== "—") updated.invoiceNo = stg.invoiceNo;
-  if (stg.csName && stg.csName !== "—") updated.csName = stg.csName;
-  if (
-    stg.customer &&
-    stg.customer !== "—" &&
-    stg.customer !== "ลูกค้าใหม่"
-  ) {
-    updated.customer = stg.customer;
-    updated.consignee = stg.customer;
-  }
-  if (stg.commodity) updated.commodity = stg.commodity;
-  if (stg.containerType) updated.containerType = stg.containerType;
-  if (stg.grossWeight !== null && stg.grossWeight !== undefined) updated.grossWeight = stg.grossWeight;
-  if (stg.cbm !== null && stg.cbm !== undefined) updated.cbm = stg.cbm;
+import {
+  buildUpdatedJob,
+  buildNewJob,
+} from "@/components/dashboard/staging/types";
 
-  if (stg.isStatusChanged && stg.hasExplicitStatus && stg.status) {
-    updated.status = stg.status;
-    if (stg.statusDetail) updated.statusDetail = stg.statusDetail;
-    if (stg.statusRaw) updated.statusRaw = stg.statusRaw;
-  }
-
-  if (stg.customsStatus) {
-    updated.customsStatus = stg.customsStatus;
-    if (stg.customsStatus === "0409") {
-      updated.cleared = true;
-      updated.doReleased = true;
-      updated.status = "Completed";
-      updated.statusDetail = "Job Complete";
-      updated.nextAction = "นำส่งสินค้าเรียบร้อย";
-    }
-  }
-
-  if (stg.declarationNo) {
-    updated.declarationNo = stg.declarationNo;
-    updated.draftCustoms = true;
-    updated.customsFiled = true;
-    if (!updated.customsDate)
-      updated.customsDate = stg.submitDate || stg.clearDate || null;
-  }
-
-  return updated;
-}
-
-/**
- * สร้าง JobRecord ใหม่จาก Staging Record
- */
-export function buildNewJob(stg: any, currentTotalJobs: number): JobRecord {
-  const isExp = /^(SH)?(SE|AE)/i.test(stg.jobNo);
-  const isAir = /^(SH)?(AE|AI)/i.test(stg.jobNo);
-  const isTrans = /^(SH)?(TS|SHT)/i.test(stg.jobNo);
-  const svc = isTrans
-    ? "Transport"
-    : isAir
-    ? isExp
-      ? "AIR Export"
-      : "AIR Import"
-    : isExp
-    ? "SEA Export"
-    : "SEA Import";
-
-  const finalDate = isExp
-    ? stg.etd || stg.submitDate || stg.eta
-    : stg.eta || stg.submitDate || stg.etd;
-  const opMonth = finalDate ? finalDate.slice(0, 7) : "2026-11";
-  const isDone = stg.status === "Completed" || stg.customsStatus === "0409";
-
-  return {
-    id: `Upload_${opMonth}_${stg.jobNo}`,
-    jobNo: stg.jobNo,
-    joinNo: stg.joinNo || undefined,
-    service: svc,
-    serviceLabel: svc,
-    status: isDone ? "Completed" : stg.status || "In Progress",
-    statusDetail: isDone ? "Job Complete" : stg.statusDetail || "Job Control",
-    statusRaw: stg.statusRaw || (isDone ? "Job Complete" : "Job Control"),
-    customer: stg.customer || "—",
-    consignee: "",
-    bl: stg.bl || "",
-    invoiceNo: stg.invoiceNo || "",
-    declarationNo: stg.declarationNo || "",
-    etd: stg.etd || null,
-    eta: stg.eta || null,
-    month: opMonth,
-    year: 2026,
-    ageDays: null,
-    flags: [],
-    jobDate: finalDate || null,
-    draftCustoms:
-      isDone || Boolean(stg.declarationNo) || Boolean(stg.customsStatus),
-    customsFiled: isDone || Boolean(stg.declarationNo),
-    doReleased: isDone,
-    cleared: isDone,
-    advanceDoc: false,
-    draftDate: null,
-    customsDate: stg.submitDate || null,
-    doDate: null,
-    clearDate: stg.clearDate || null,
-    advanceDate: null,
-    sourceRow: currentTotalJobs + 1,
-    customsStatus: stg.customsStatus || null,
-    csName: stg.csName || "",
-    containerType: stg.containerType || undefined,
-    grossWeight: stg.grossWeight ?? undefined,
-    cbm: stg.cbm ?? undefined,
-    commodity: stg.commodity || undefined,
-    nextAction: isDone ? "นำส่งสินค้าเรียบร้อย" : "ตรวจปล่อยสินค้า",
-  };
-}
+export { buildUpdatedJob, buildNewJob };

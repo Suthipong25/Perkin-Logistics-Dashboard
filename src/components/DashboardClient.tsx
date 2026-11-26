@@ -199,18 +199,10 @@ export default function DashboardClient({
 
   /* ==========================================================================
    * 4. KEYBOARD SHORTCUTS
-   * คีย์ลัด ⌘K / Ctrl+K สำหรับโฟกัสช่องค้นหา และ Escape สำหรับปิด Drawer
+   * คีย์ลัด Escape สำหรับปิด Drawer หรือเมนูมือถือ
    * ========================================================================== */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        const input = document.getElementById("globalSearchInput");
-        if (input) {
-          input.focus();
-          if ("select" in input) (input as HTMLInputElement).select();
-        }
-      }
       if (e.key === "Escape") {
         if (selectedJobNo) {
           setSelectedJobNo(null);

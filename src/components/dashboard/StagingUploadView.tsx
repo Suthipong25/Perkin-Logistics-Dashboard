@@ -3,6 +3,10 @@
 import React, { useState, useMemo } from "react";
 import { JobRecord, TransportRecord } from "@/types/dashboard";
 import {
+  buildUpdatedJob,
+  buildNewJob,
+} from "./staging/types";
+import {
   StagingRecord,
   StagingTransportRecord,
   UploadSummary,
@@ -735,109 +739,9 @@ export function StagingUploadView({
           stg.isDateChanged ||
           stg.isCustomsChanged ||
           stg.isStatusChanged ||
-          (stg as any).isChanged
+          stg.isChanged
         ) {
-          const target = { ...updatedJobsList[existingIdx] };
-          if (stg.etd) target.etd = stg.etd;
-          if (stg.eta) target.eta = stg.eta;
-          if (stg.clearDate) target.clearDate = stg.clearDate;
-          if (stg.flightTime) target.flightTime = stg.flightTime;
-          if (stg.vessel) target.vessel = stg.vessel;
-          if (stg.feeder) target.feeder = stg.feeder;
-          if (stg.flightNo) target.flightNo = stg.flightNo;
-          if (stg.carrier) target.carrier = stg.carrier;
-          if (stg.bl && stg.bl !== "—") {
-            target.bl = stg.bl;
-            target.mbl = (stg as any).mbl || stg.bl;
-          } else if (stg.fileType !== "customs" && !stg.bl && !(stg as any).mbl && !(stg as any).hbl) {
-            target.bl = "";
-            target.mbl = "";
-            target.hbl = "";
-          }
-          if ((stg as any).mbl && (stg as any).mbl !== "—") target.mbl = (stg as any).mbl;
-          else if (stg.fileType !== "customs" && (stg as any).hasBlColumn && !(stg as any).mbl) target.mbl = "";
-          if ((stg as any).hbl && (stg as any).hbl !== "—") target.hbl = (stg as any).hbl;
-          else if (stg.fileType !== "customs" && (stg as any).hasBlColumn && !(stg as any).hbl) target.hbl = "";
-          if (stg.csName && stg.csName !== "—") target.csName = stg.csName;
-          if (
-            stg.customer &&
-            stg.customer !== "—" &&
-            stg.customer !== "ลูกค้าใหม่"
-          ) {
-            target.customer = stg.customer;
-            target.consignee = stg.customer;
-          }
-          if (stg.commodity) target.commodity = stg.commodity;
-          if (stg.containerType) target.containerType = stg.containerType;
-          if (stg.grossWeight !== null && stg.grossWeight !== undefined) target.grossWeight = stg.grossWeight;
-          if (stg.cbm !== null && stg.cbm !== undefined) target.cbm = stg.cbm;
-          if (stg.invoiceNo && stg.invoiceNo !== "—") target.invoiceNo = stg.invoiceNo;
-
-          if (stg.isStatusChanged && stg.hasExplicitStatus && stg.status) {
-            target.status = stg.status as JobRecord["status"];
-            if (stg.statusDetail) target.statusDetail = stg.statusDetail;
-            if (stg.statusRaw) target.statusRaw = stg.statusRaw;
-            if (stg.status === "Completed") {
-              target.cleared = true;
-              target.doReleased = true;
-              target.draftCustoms = true;
-              target.customsFiled = true;
-              target.nextAction = "นำส่งสินค้าเรียบร้อย";
-            }
-          }
-
-          const isInvalidDecl = (d?: string | null) =>
-            !d ||
-            [
-              "-",
-              "—",
-              "N/A",
-              "NONE",
-              "NULL",
-              "NORMAL",
-              "GENERAL",
-              "IMPORT",
-              "EXPORT",
-              "TRANSIT",
-              "RE-EXPORT",
-            ].includes(String(d).trim().toUpperCase());
-          if (!isInvalidDecl(stg.declarationNo)) {
-            target.declarationNo = String(stg.declarationNo).trim();
-            target.draftCustoms = true;
-            target.customsFiled = true;
-            if (!target.customsDate)
-              target.customsDate = stg.submitDate || stg.clearDate || null;
-          }
-
-          if (
-            stg.customsStatus &&
-            customsRank(stg.customsStatus) > customsRank(target.customsStatus)
-          ) {
-            target.customsStatus = stg.customsStatus;
-            if (stg.customsStatus === "0409") {
-              target.status = "Completed";
-              target.statusDetail = "Job Complete";
-              target.nextAction = "นำส่งสินค้าเรียบร้อย";
-              target.cleared = true;
-              target.doReleased = true;
-              target.draftCustoms = true;
-              target.customsFiled = true;
-            }
-          }
-          if (stg.isDateChanged) {
-            const isExp =
-              target.jobNo?.startsWith("SE") ||
-              target.jobNo?.startsWith("SHSE") ||
-              target.jobNo?.startsWith("AE") ||
-              target.jobNo?.startsWith("SHAE");
-            const finalOpDate = isExp
-              ? target.etd || target.submitDate || target.eta
-              : target.eta || target.submitDate || target.etd;
-            if (finalOpDate) {
-              target.jobDate = finalOpDate;
-              target.month = finalOpDate.slice(0, 7);
-            }
-          }
+          const target = buildUpdatedJob(updatedJobsList[existingIdx], stg);
           updatedJobsList[existingIdx] = target;
           changedJobs.push(target);
           dateUpdatedCount++;
@@ -857,84 +761,7 @@ export function StagingUploadView({
       if (stg.isBlankDummy) continue;
 
       applyNew++;
-      const svc = (
-        stg.jobNo.startsWith("SI") || stg.jobNo.startsWith("SHSI")
-          ? "SEA Import"
-          : stg.jobNo.startsWith("SE") || stg.jobNo.startsWith("SHSE")
-          ? "SEA Export"
-          : stg.jobNo.startsWith("AI") || stg.jobNo.startsWith("SHAI")
-          ? "AIR Import"
-          : stg.jobNo.startsWith("AE") || stg.jobNo.startsWith("SHAE")
-          ? "AIR Export"
-          : stg.jobNo.startsWith("TS") || stg.jobNo.startsWith("SHT")
-          ? "Transport"
-          : "Freight"
-      ) as JobRecord["service"];
-
-      const finalOpDate = isExp
-        ? stg.etd || stg.submitDate || stg.eta
-        : stg.eta || stg.submitDate || stg.etd;
-      const opMonth = finalOpDate ? finalOpDate.slice(0, 7) : "2026-11";
-      const resolvedStatus = (
-        stg.hasExplicitStatus && stg.status
-          ? stg.status
-          : stg.customsStatus === "0409"
-          ? "Completed"
-          : "In Progress"
-      ) as JobRecord["status"];
-      const resolvedDetail =
-        stg.statusDetail ||
-        (resolvedStatus === "Completed"
-          ? "Job Complete"
-          : resolvedStatus === "Booking"
-          ? "Job Booking"
-          : resolvedStatus === "Cancelled"
-          ? "Job Cancelled"
-          : "Job Control");
-      const isDone = resolvedStatus === "Completed";
-
-      const newJobRecord: JobRecord = {
-        id: `Upload_${opMonth}_${stg.jobNo}`,
-        jobNo: stg.jobNo,
-        joinNo: stg.joinNo || undefined,
-        service: svc,
-        serviceLabel: svc,
-        status: resolvedStatus,
-        statusDetail: resolvedDetail,
-        statusRaw: stg.statusRaw || resolvedDetail,
-        customer: stg.customer,
-        consignee: "",
-        bl: stg.bl || "",
-        invoiceNo: stg.invoiceNo || "",
-        declarationNo: stg.declarationNo || "",
-        etd: stg.etd || null,
-        eta: stg.eta || null,
-        month: opMonth,
-        year: 2026,
-        ageDays: null,
-        flags: [],
-        jobDate: finalOpDate || null,
-        draftCustoms:
-          isDone || Boolean(stg.declarationNo) || Boolean(stg.customsStatus),
-        customsFiled: isDone || Boolean(stg.declarationNo),
-        doReleased: isDone,
-        cleared: isDone,
-        advanceDoc: false,
-        draftDate: null,
-        customsDate:
-          stg.fileType === "customs" ? stg.submitDate || null : null,
-        doDate: null,
-        clearDate: stg.clearDate || null,
-        advanceDate: null,
-        sourceRow: updatedJobsList.length + 1,
-        customsStatus: stg.customsStatus || (isDone ? "0409" : "0109"),
-        csName: stg.csName || "",
-        containerType: stg.containerType || undefined,
-        grossWeight: stg.grossWeight ?? undefined,
-        cbm: stg.cbm ?? undefined,
-        commodity: stg.commodity || undefined,
-        nextAction: isDone ? "นำส่งสินค้าเรียบร้อย" : "ตรวจปล่อยสินค้า",
-      };
+      const newJobRecord = buildNewJob(stg, updatedJobsList.length);
       updatedJobsList.push(newJobRecord);
       changedJobs.push(newJobRecord);
       const newIdx = updatedJobsList.length - 1;

@@ -109,9 +109,10 @@ export default function JobDrawer({
     const hblVal = String(fd.get("hbl") || "").trim();
     const invVal = String(fd.get("invoiceNo") || "").trim();
     const cntrVal = String(fd.get("containerType") || "").trim();
+    const effectiveBl = blVal || hblVal;
 
     const patch: Partial<JobRecord> & { expectedVersion?: number } = {
-      bl: blVal,
+      bl: effectiveBl,
       mbl: blVal,
       hbl: hblVal,
       invoiceNo: invVal,
