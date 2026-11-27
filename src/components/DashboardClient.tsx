@@ -513,12 +513,29 @@ export default function DashboardClient({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#dce2e8] text-[13.5px]">
-                    {advances
+                    {[...advances]
+                      .map((r) => {
+                        const linkedJob = jobs.find((j) => j.jobNo === r.jobNo);
+                        const isJobCleared =
+                          r.state === "cleared" ||
+                          Boolean(
+                            linkedJob &&
+                              (linkedJob.status === "Completed" || linkedJob.cleared)
+                          );
+                        return isJobCleared
+                          ? {
+                              ...r,
+                              state: "cleared" as const,
+                              cleared: r.amount,
+                              ageDays: 0,
+                            }
+                          : r;
+                      })
                       .filter((r) => {
                         if (advState !== "all" && r.state !== advState)
                           return false;
                         if (advQ.trim()) {
-                          const low = advQ.toLowerCase();
+                          const low = advQ.trim().toLowerCase();
                           return [
                             r.advNo,
                             r.jobNo,
@@ -533,6 +550,7 @@ export default function DashboardClient({
                         }
                         return true;
                       })
+                      .sort((a, b) => b.advNo.localeCompare(a.advNo))
                       .map((r) => (
                         <tr
                           key={r.advNo}
