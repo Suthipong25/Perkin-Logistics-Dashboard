@@ -15,6 +15,7 @@ const DATA_DIR = path.join(process.cwd(), "data");
 // Bundled fallbacks for serverless environments (e.g. Vercel) where filesystem pathing may differ
 let bundledJobs: JobRecord[] | null = null;
 let bundledTransport: TransportRecord[] | null = null;
+let bundledAdvances: AdvanceRecord[] | null = null;
 let bundledQuality: QualityReport[] | any = null;
 let bundledQualityAlerts: QualityAlertsReport | any = null;
 let bundledSnapshots: SnapshotManifestEntry[] | null = null;
@@ -27,6 +28,11 @@ try {
 try {
   const mod = require("../../data/transport.json");
   bundledTransport = Array.isArray(mod) ? mod : (mod.rows || mod.trips || mod.transport || []);
+} catch {}
+
+try {
+  const mod = require("../../data/advances.json");
+  bundledAdvances = Array.isArray(mod) ? mod : (mod.rows || mod.advances || []);
 } catch {}
 
 try {
@@ -230,22 +236,16 @@ export function getSnapshots(): SnapshotManifestEntry[] {
   }
 }
 
-export const ADVANCE_ROWS: AdvanceRecord[] = [
-  { advNo: "AV26070162", jobNo: "SHAI26070040", customer: "CH.KARNCHANG PUBLIC COMPANY LIMITED", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-15", amount: 9400, cleared: 9400, clearNo: "CL26070215", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070160", jobNo: "SHAI26070045", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-22", amount: 3100, cleared: 3100, clearNo: "CL26070214", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070158", jobNo: "SHAI26070041", customer: "Maxis products co.,ltd.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-15", amount: 6100, cleared: 6100, clearNo: "CL26070201", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070157", jobNo: "SHAI26070044", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-22", amount: 2800, cleared: 2800, clearNo: "CL26070213", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070155", jobNo: "SHAI26070043", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-21", amount: 3400, cleared: 3400, clearNo: "CL26070203", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070154", jobNo: "SHAI26070042", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-21", amount: 2950, cleared: 2950, clearNo: "CL26070204", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070147", jobNo: "SHAI26070039", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-21", amount: 3800, cleared: 3800, clearNo: "CL26070202", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070143", jobNo: "SHAI26070035", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-19", amount: 4500, cleared: 4500, clearNo: "CL26070205", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "เคลียร์ครบตามใบเสร็จ" },
-  { advNo: "AV26070140", jobNo: "SHSI26070079", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "GDL INTERTRANSPORT CO.,LTD.", branch: "HEAD OFFICE", advDate: "2026-07-20", amount: 2000, cleared: 2000, clearNo: "CL26070212", shipping: "APIRAK", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070138", jobNo: "SHSI26070074", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "นายเอกพงศ์ ศรีทอง (หัวลาก)", branch: "HEAD OFFICE", advDate: "2026-07-20", amount: 3000, cleared: 3000, clearNo: "CL26070211", shipping: "APIRAK", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070130", jobNo: "SHAE26070001", customer: "CN LOGISTICS (THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-18", amount: 6800, cleared: 6800, clearNo: "CL26070208", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070121", jobNo: "SHAI26070022", customer: "KAWASAKI TRADING (THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-14", amount: 5200, cleared: 5200, clearNo: "CL26070210", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070114", jobNo: "SHAI26070018", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-14", amount: 4900, cleared: 4900, clearNo: "CL26070198", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "เคลียร์ 15.07.69" },
-  { advNo: "AV26070112", jobNo: "SHSI26070062", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "กรมศุลกากร (พักรายได้)", branch: "HEAD OFFICE", advDate: "2026-07-14", amount: 18500, cleared: 18500, clearNo: "CL26070209", shipping: "APIRAK", ageDays: 0, state: "cleared", note: "เคลียร์ครบตามใบเสร็จ" },
-  { advNo: "AV26070110", jobNo: "SHAI26070020", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "SUVARNABHUMI", advDate: "2026-07-14", amount: 3250, cleared: 3250, clearNo: "CL26070195", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชี 16.07.69" },
-  { advNo: "AV26070076", jobNo: "SHAI26070012", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "HEAD OFFICE", advDate: "2026-07-09", amount: 3500, cleared: 3500, clearNo: "CL26070207", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชีแล้ว" },
-  { advNo: "AV26070056", jobNo: "SHAI26070008", customer: "SAVE LOGISTICS(THAILAND) CO.,LTD.", payTo: "SHIPPING ANUCHA", branch: "HEAD OFFICE", advDate: "2026-07-07", amount: 4200, cleared: 4200, clearNo: "CL26070206", shipping: "ANUCHA", ageDays: 0, state: "cleared", note: "ปิดชุดบัญชี 16/7 เรียบร้อย" },
-];
+export function getAdvances(): AdvanceRecord[] {
+  const filePath = getDataFilePath("advances.json");
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+    return parsed.rows || parsed.advances || [];
+  } catch {
+    return bundledAdvances || [];
+  }
+}
+
+export const ADVANCE_ROWS: AdvanceRecord[] = getAdvances();

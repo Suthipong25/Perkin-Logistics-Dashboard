@@ -186,6 +186,9 @@ export default function DashboardClient({
   // ตัวกรองของหน้าเงินทดรองจ่าย (Advances)
   const [advQ, setAdvQ] = useState("");
   const [advState, setAdvState] = useState("all");
+  const [advPage, setAdvPage] = useState(1);
+  const [advSortDir, setAdvSortDir] = useState<"asc" | "desc">("desc");
+  const advPageSize = 50;
 
   useEffect(() => {
     setMounted(true);
@@ -461,165 +464,315 @@ export default function DashboardClient({
           )}
 
           {/* VIEW 4: SHIPPING ADVANCES & CLEARING */}
-          {page === "advances" && (
-            <section className="bg-white rounded-[8px] border border-[#dce2e8] overflow-hidden">
-              <div className="p-4 border-b border-[#dce2e8] flex flex-wrap items-center gap-3">
-                <div className="relative w-full sm:w-[280px]">
-                  <Search className="w-4 h-4 text-[#6e7e91] absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="search"
-                    aria-label="ค้นหาตาม Adv No, Job No หรือผู้รับเงิน"
-                    value={advQ}
-                    onChange={(e) => setAdvQ(e.target.value)}
-                    placeholder="ค้นหา Adv No, Job No, ผู้รับเงิน…"
-                    className="w-full h-9 pl-9 pr-3 rounded-[6px] border border-[#c5cfd9] text-[13.5px] outline-none focus:border-[#f56a22]"
-                  />
-                </div>
-                <div className="inline-flex rounded-[6px] border border-[#c5cfd9] overflow-hidden text-[12.5px] font-medium">
-                  {[
-                    ["all", "ทั้งหมด"],
-                    ["overdue", "เกินกำหนด (>5 วัน)"],
-                    ["pending", "รอเคลียร์"],
-                    ["cleared", "เคลียร์แล้ว"],
-                  ].map(([k, label]) => (
-                    <button
-                      key={k}
-                      onClick={() => setAdvState(k)}
-                      className={`px-3 h-9 border-l first:border-l-0 border-[#dce2e8] ${
-                        advState === k
-                          ? "bg-[#071a2f] text-white"
-                          : "bg-white text-[#526275] hover:bg-slate-50"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+          {page === "advances" && (() => {
+            const filteredAdv = [...advances]
+              .map((r) => {
+                const linkedJob = jobs.find((j) => j.jobNo === r.jobNo);
+                const isJobCleared =
+                  r.state === "cleared" ||
+                  Boolean(r.clearNo && r.clearNo !== "—") ||
+                  Boolean(
+                    linkedJob &&
+                      (linkedJob.status === "Completed" || linkedJob.cleared)
+                  );
+                return isJobCleared
+                  ? {
+                      ...r,
+                      state: "cleared" as const,
+                      cleared: r.cleared ?? r.amount,
+                      ageDays: 0,
+                    }
+                  : r;
+              })
+              .filter((r) => {
+                if (advState !== "all" && r.state !== advState)
+                  return false;
+                if (advQ.trim()) {
+                  const low = advQ.trim().toLowerCase();
+                  const compactLow = low.replace(/\s+/g, "");
+                  return [
+                    r.advNo,
+                    r.jobNo,
+                    r.joinNo,
+                    r.obl,
+                    r.hbl,
+                    r.customer,
+                    r.payTo,
+                    r.clearNo,
+                    r.recPayDocNo,
+                    r.batchAdvNo,
+                    r.shipping,
+                  ].some((v) => {
+                    const str = String(v || "").toLowerCase();
+                    return (
+                      str.includes(low) ||
+                      (compactLow.length >= 4 && str.replace(/\s+/g, "").includes(compactLow))
+                    );
+                  });
+                }
+                return true;
+              })
+              .sort((a, b) =>
+                advSortDir === "desc"
+                  ? b.advNo.localeCompare(a.advNo)
+                  : a.advNo.localeCompare(b.advNo)
+              );
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[900px]">
-                  <thead>
-                    <tr className="bg-[#f5f6f8] border-b border-[#dce2e8] text-[11.5px] font-semibold uppercase tracking-wider text-[#526275]">
-                      <th className="py-3 px-4">Adv. No</th>
-                      <th className="py-3 px-3">Job No</th>
-                      <th className="py-3 px-4">ผู้รับเงิน / Shipping</th>
-                      <th className="py-3 px-4">ลูกค้า</th>
-                      <th className="py-3 px-3">วันที่เบิก</th>
-                      <th className="py-3 px-4 text-right">ยอดเบิก (฿)</th>
-                      <th className="py-3 px-3">Clearing No</th>
-                      <th className="py-3 px-3">สถานะ</th>
-                      <th className="py-3 px-4">หมายเหตุ</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#dce2e8] text-[13.5px]">
-                    {[...advances]
-                      .map((r) => {
-                        const linkedJob = jobs.find((j) => j.jobNo === r.jobNo);
-                        const isJobCleared =
-                          r.state === "cleared" ||
-                          Boolean(
-                            linkedJob &&
-                              (linkedJob.status === "Completed" || linkedJob.cleared)
-                          );
-                        return isJobCleared
-                          ? {
-                              ...r,
-                              state: "cleared" as const,
-                              cleared: r.amount,
-                              ageDays: 0,
-                            }
-                          : r;
-                      })
-                      .filter((r) => {
-                        if (advState !== "all" && r.state !== advState)
-                          return false;
-                        if (advQ.trim()) {
-                          const low = advQ.trim().toLowerCase();
-                          return [
-                            r.advNo,
-                            r.jobNo,
-                            r.customer,
-                            r.payTo,
-                            r.clearNo,
-                          ].some((v) =>
-                            String(v || "")
-                              .toLowerCase()
-                              .includes(low)
-                          );
-                        }
-                        return true;
-                      })
-                      .sort((a, b) => b.advNo.localeCompare(a.advNo))
-                      .map((r) => (
-                        <tr
-                          key={r.advNo}
-                          tabIndex={0}
-                          role="button"
-                          aria-label={`เปิดดูงาน ${r.jobNo} ของเงินทดรองจ่าย ${r.advNo}`}
+            const advTotalPages = Math.max(1, Math.ceil(filteredAdv.length / advPageSize));
+            const pagedAdv = filteredAdv.slice((advPage - 1) * advPageSize, advPage * advPageSize);
+            const sumAdvance = filteredAdv.reduce((s, r) => s + (r.amount || 0), 0);
+            const sumCleared = filteredAdv.reduce((s, r) => s + (r.cleared ?? 0), 0);
+            const sumDiff = filteredAdv.reduce(
+              (s, r) => s + (r.diff !== undefined ? r.diff : (r.amount || 0) - (r.cleared ?? 0)),
+              0
+            );
+
+            return (
+              <section className="bg-white rounded-[12px] border border-[#dce2e8] shadow-xs overflow-hidden">
+                {/* Summary KPI Strip from Advance Report */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-[#f8fafc] border-b border-[#dce2e8]">
+                  <div className="bg-white rounded-lg border border-slate-200/80 p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                      รายการเบิกทั้งหมด (Advance Count)
+                    </div>
+                    <div className="text-lg font-bold font-mono text-[#073766] mt-0.5 tabular-nums">
+                      {fmtNum(filteredAdv.length)} <span className="text-xs font-sans font-medium text-slate-500">รายการ</span>
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-lg border border-slate-200/80 p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                      ยอดเบิกเงินทดรองรวม (Total Advance)
+                    </div>
+                    <div className="text-lg font-bold font-mono text-[#102238] mt-0.5 tabular-nums">
+                      ฿{sumAdvance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-lg border border-slate-200/80 p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                      ยอดเคลียร์ค่าใช้จ่ายรวม (Total Clear)
+                    </div>
+                    <div className="text-lg font-bold font-mono text-[#0d7a5f] mt-0.5 tabular-nums">
+                      ฿{sumCleared.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-lg border border-slate-200/80 p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                      ส่วนต่างสุทธิ (Net DIFF: Advance - Clear)
+                    </div>
+                    <div className={`text-lg font-bold font-mono mt-0.5 tabular-nums ${sumDiff >= 0 ? "text-[#0284c7]" : "text-[#c9252d]"}`}>
+                      ฿{sumDiff.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 border-b border-[#dce2e8] flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative w-full sm:w-[290px]">
+                      <Search className="w-4 h-4 text-[#6e7e91] absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="search"
+                        aria-label="ค้นหาตาม Adv No, Job No, ลูกค้า, ผู้รับเงิน หรือ Clear No"
+                        value={advQ}
+                        onChange={(e) => {
+                          setAdvQ(e.target.value);
+                          setAdvPage(1);
+                        }}
+                        placeholder="ค้นหา AV No, Job No, ลูกค้า, ผู้รับเงิน, CL No…"
+                        className="w-full h-9 pl-9 pr-3 rounded-[6px] border border-[#c5cfd9] text-[13px] outline-none focus:border-[#f56a22]"
+                      />
+                    </div>
+                    <div className="inline-flex rounded-[6px] border border-[#c5cfd9] overflow-hidden text-[12.5px] font-medium">
+                      {[
+                        ["all", "ทั้งหมด"],
+                        ["overdue", "เกินกำหนด (>5 วัน)"],
+                        ["pending", "รอเคลียร์"],
+                        ["cleared", "เคลียร์แล้ว"],
+                      ].map(([k, label]) => (
+                        <button
+                          key={k}
                           onClick={() => {
-                            if (jobs.some((j) => j.jobNo === r.jobNo)) {
-                              setSelectedJobNo(r.jobNo);
-                            }
+                            setAdvState(k);
+                            setAdvPage(1);
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
+                          className={`px-3 h-9 border-l first:border-l-0 border-[#dce2e8] cursor-pointer ${
+                            advState === k
+                              ? "bg-[#071a2f] text-white"
+                              : "bg-white text-[#526275] hover:bg-slate-50"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <span className="text-xs font-medium text-slate-500">
+                    พบ <strong className="text-slate-900 font-bold tabular-nums">{fmtNum(filteredAdv.length)}</strong> รายการ
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[1160px]">
+                    <thead>
+                      <tr className="bg-[#f0f4f8] border-b border-[#dce2e8] text-[11px] font-semibold uppercase tracking-wider text-[#526275] whitespace-nowrap">
+                        <th className="py-3 px-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdvSortDir((d) => (d === "desc" ? "asc" : "desc"));
+                              setAdvPage(1);
+                            }}
+                            className="inline-flex items-center gap-1 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer"
+                          >
+                            <span>Adv. No {advSortDir === "desc" ? "↓" : "↑"}</span>
+                          </button>
+                        </th>
+                        <th className="py-3 px-3">Job No</th>
+                        <th className="py-3 px-4">ผู้รับเงิน / Shipping (Pay To)</th>
+                        <th className="py-3 px-4">ลูกค้า (Customer)</th>
+                        <th className="py-3 px-3">วันที่เบิก</th>
+                        <th className="py-3 px-3 text-right">ยอดเบิก (Advance)</th>
+                        <th className="py-3 px-3 text-right">ยอดเคลียร์ (Clear)</th>
+                        <th className="py-3 px-3 text-right">ส่วนต่าง (DIFF)</th>
+                        <th className="py-3 px-3">Clear No / วันที่เคลียร์</th>
+                        <th className="py-3 px-3">RV/AV &amp; Batch</th>
+                        <th className="py-3 px-3">สถานะ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#dce2e8] text-[13px] tabular-nums">
+                      {pagedAdv.map((r) => {
+                        const diffVal = r.diff !== undefined ? r.diff : (r.amount || 0) - (r.cleared ?? 0);
+                        return (
+                          <tr
+                            key={r.advNo}
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`เปิดดูงาน ${r.jobNo} ของเงินทดรองจ่าย ${r.advNo}`}
+                            onClick={() => {
                               if (jobs.some((j) => j.jobNo === r.jobNo)) {
                                 setSelectedJobNo(r.jobNo);
                               }
-                            }
-                          }}
-                          className="hover:bg-slate-50 cursor-pointer focus-visible:outline-none focus-visible:bg-slate-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#073766]"
-                        >
-                          <td className="py-3 px-4 font-mono font-semibold text-[#073766] whitespace-nowrap">
-                            {r.advNo}
-                          </td>
-                          <td className="py-3 px-3 font-mono text-xs whitespace-nowrap">
-                            <span className="px-2 py-0.5 rounded border border-[#c5cfd9] bg-white whitespace-nowrap">
-                              {r.jobNo}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-medium text-[#102238] whitespace-nowrap">
-                            {r.payTo}
-                          </td>
-                          <td className="py-3 px-4 text-[#526275] max-w-[220px] truncate">
-                            {r.customer}
-                          </td>
-                          <td className="py-3 px-3 num text-[#526275] whitespace-nowrap">
-                            {fmtDate(r.advDate)}
-                          </td>
-                          <td className="py-3 px-4 text-right num font-bold text-[#102238] whitespace-nowrap">
-                            ฿{fmtNum(r.amount)}
-                          </td>
-                          <td className="py-3 px-3 font-mono text-xs text-[#526275] whitespace-nowrap">
-                            {r.clearNo}
-                          </td>
-                          <td className="py-3 px-3 whitespace-nowrap">
-                            <span
-                              className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded whitespace-nowrap ${
-                                r.state === "cleared"
-                                  ? "bg-[#e6f5f0] text-[#0d7a5f]"
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                if (jobs.some((j) => j.jobNo === r.jobNo)) {
+                                  setSelectedJobNo(r.jobNo);
+                                }
+                              }
+                            }}
+                            className="hover:bg-slate-50 cursor-pointer focus-visible:outline-none focus-visible:bg-slate-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#073766]"
+                          >
+                            <td className="py-3 px-4 font-mono font-bold text-[#073766] whitespace-nowrap">
+                              <div>{r.advNo}</div>
+                              <div className="text-[10.5px] font-normal text-slate-400">
+                                By: {r.shipping}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 font-mono text-xs whitespace-nowrap">
+                              <span className="px-2 py-0.5 rounded border border-[#c5cfd9] bg-white font-semibold text-[#073766] whitespace-nowrap">
+                                {r.jobNo}
+                              </span>
+                              {r.joinNo && (
+                                <div className="text-[10.5px] text-slate-400 mt-0.5">
+                                  Join: {r.joinNo}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 font-medium text-[#102238] max-w-[230px]">
+                              <div className="truncate" title={r.payTo}>{r.payTo}</div>
+                              {(r.obl || r.hbl) && (
+                                <div className="text-[10.5px] font-mono text-slate-400 truncate">
+                                  BL: {r.obl || r.hbl}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-[#526275] max-w-[220px] truncate" title={r.customer}>
+                              {r.customer}
+                            </td>
+                            <td className="py-3 px-3 num text-[#526275] whitespace-nowrap">
+                              {fmtDate(r.advDate)}
+                            </td>
+                            <td className="py-3 px-3 text-right num font-bold text-[#102238] whitespace-nowrap">
+                              ฿{(r.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-3 px-3 text-right num font-semibold text-[#0d7a5f] whitespace-nowrap">
+                              ฿{(r.cleared ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className={`py-3 px-3 text-right num font-mono font-semibold whitespace-nowrap ${
+                              diffVal < 0 ? "text-[#c9252d]" : diffVal > 0 ? "text-[#0284c7]" : "text-slate-400"
+                            }`}>
+                              {diffVal === 0
+                                ? "0.00"
+                                : `${diffVal > 0 ? "+" : ""}${diffVal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                            </td>
+                            <td className="py-3 px-3 font-mono text-xs text-[#102238] whitespace-nowrap">
+                              <div className="font-semibold">{r.clearNo}</div>
+                              {r.clearDate && (
+                                <div className="text-[10.5px] text-slate-500">
+                                  {fmtDate(r.clearDate)}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 font-mono text-xs text-[#526275] whitespace-nowrap">
+                              <div>{r.recPayDocNo || "—"}</div>
+                              {r.batchAdvNo && (
+                                <div className="text-[10.5px] text-[#0d7a5f]">
+                                  {r.batchAdvNo}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded whitespace-nowrap ${
+                                  r.state === "cleared"
+                                    ? "bg-[#e6f5f0] text-[#0d7a5f]"
+                                    : r.state === "overdue"
+                                    ? "bg-[#fdecec] text-[#c9252d]"
+                                    : "bg-[#fff1e8] text-[#b45309]"
+                                }`}
+                              >
+                                {r.state === "cleared"
+                                  ? "เคลียร์แล้ว"
                                   : r.state === "overdue"
-                                  ? "bg-[#fdecec] text-[#c9252d]"
-                                  : "bg-[#fff1e8] text-[#b45309]"
-                              }`}
-                            >
-                              {r.state === "cleared"
-                                ? "เคลียร์แล้ว"
-                                : r.state === "overdue"
-                                ? `เกิน ${r.ageDays} วัน`
-                                : `รอเคลียร์ (${r.ageDays} วัน)`}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-[#526275]">{r.note}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
+                                  ? `เกิน ${r.ageDays} วัน`
+                                  : `รอเคลียร์ (${r.ageDays} วัน)`}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                <div className="px-4 py-3 border-t border-[#dce2e8] bg-[#f8fafc] flex items-center justify-between text-[13px] text-[#526275]">
+                  <span>
+                    หน้า <b className="text-[#102238]">{advPage}</b> จาก {advTotalPages} (ทั้งหมด {fmtNum(filteredAdv.length)} รายการ)
+                  </span>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      disabled={advPage <= 1}
+                      onClick={() => setAdvPage((p) => Math.max(1, p - 1))}
+                      className="px-3 py-1 rounded border border-[#c5cfd9] bg-white disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
+                    >
+                      ก่อนหน้า
+                    </button>
+                    <button
+                      type="button"
+                      disabled={advPage >= advTotalPages}
+                      onClick={() => setAdvPage((p) => Math.min(advTotalPages, p + 1))}
+                      className="px-3 py-1 rounded border border-[#c5cfd9] bg-white disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
+                    >
+                      ถัดไป
+                    </button>
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
 
           {/* VIEW 5: UPLOAD & AUTO-UPDATE PIPELINE (STAGING SANDBOX) */}
           {page === "upload" && (

@@ -120,13 +120,25 @@ export interface QualityReport {
 export interface AdvanceRecord {
   advNo: string;
   jobNo: string;
+  joinNo?: string;
+  obl?: string;
+  hbl?: string;
   customer: string;
   payTo: string;
   branch: string;
   advDate: string;
   amount: number;
+  companyReceipt?: number;
+  customerReceipt?: number;
+  noReceipt?: number;
   cleared: number;
+  diff?: number;
   clearNo: string;
+  clearDate?: string;
+  recPayDocNo?: string;
+  statusRaw?: string;
+  batchAdvNo?: string;
+  batchAdvStatus?: string;
   shipping: string;
   ageDays: number;
   state: "overdue" | "pending" | "cleared";
