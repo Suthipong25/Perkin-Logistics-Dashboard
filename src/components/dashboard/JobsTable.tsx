@@ -222,11 +222,22 @@ export default function JobsTable({
   const [customsFilter, setCustomsFilter] = useState<string>(initialCustomsFilter);
   // เฉพาะงานที่เลยกำหนด ETD หรือไม่
   const [overdueOnly, setOverdueOnly] = useState(initialOverdueOnly);
-  // ทิศทางการเรียงลำดับเดือนและเลขลำดับงาน ("desc" = ใหม่ไปเก่า ค่าเริ่มต้น | "asc" = เก่าไปใหม่)
+  // คอลัมน์และทิศทางการเรียงลำดับ ("jobNo" | "service" | "customer" | "status", "desc" = ใหม่ไปเก่า ค่าเริ่มต้น)
+  const [sortCol, setSortCol] = useState<"jobNo" | "service" | "customer" | "status">("jobNo");
   const [jobSortDir, setJobSortDir] = useState<"asc" | "desc">("desc");
   // หน้าปัจจุบัน
   const [pageNum, setPageNum] = useState(1);
   const pageSize = 25;
+
+  const handleSort = (col: "jobNo" | "service" | "customer" | "status") => {
+    if (sortCol === col) {
+      setJobSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setJobSortDir(col === "jobNo" ? "desc" : "asc");
+    }
+    setPageNum(1);
+  };
 
   /* ==========================================================================
    * 0.9 MONTH OPTIONS WITH COUNTS (MEMOIZED)
@@ -398,25 +409,54 @@ export default function JobsTable({
       );
     }
 
-    // 2.7 เรียงลำดับตามโครงสร้างรหัสงาน (Job No):
-    //     1) หมวดงาน: SHAI -> SHSE -> SHSI -> SHAE
-    //     2) ปี ค.ศ. (เช่น 26)
-    //     3) เดือน 01 -> 12
-    //     4) ลำดับงานของเดือนนั้น 0001 -> 9999 (สลับ asc/desc ได้ที่หัวตาราง)
+    // 2.7 เรียงลำดับตามคอลัมน์ที่เลือก (Job No / บริการ / ผู้นำเข้า-ส่งออก / สถานะ)
     const dir = jobSortDir === "asc" ? 1 : -1;
-    list.sort((a, b) => {
+    const STAGE_RANK: Record<string, number> = {
+      Booking: 1,
+      Control: 2,
+      Waiting: 3,
+      Completed: 4,
+      Cancelled: 5,
+    };
+    const compareJobNo = (a: JobRecord, b: JobRecord, d: number) => {
       const pa = parseJobNo(a.jobNo);
       const pb = parseJobNo(b.jobNo);
       if (pa.prefixRank !== pb.prefixRank) return pa.prefixRank - pb.prefixRank;
-      if (pa.year !== pb.year) return (pa.year - pb.year) * dir;
-      if (pa.month !== pb.month) return (pa.month - pb.month) * dir;
-      if (pa.seq !== pb.seq) return (pa.seq - pb.seq) * dir;
+      if (pa.year !== pb.year) return (pa.year - pb.year) * d;
+      if (pa.month !== pb.month) return (pa.month - pb.month) * d;
+      if (pa.seq !== pb.seq) return (pa.seq - pb.seq) * d;
       if (pa.prefix !== pb.prefix) return pb.prefix.localeCompare(pa.prefix);
       return String(b.jobNo || "").localeCompare(String(a.jobNo || ""));
+    };
+
+    list.sort((a, b) => {
+      if (sortCol === "service") {
+        const sa = serviceMeta(a.service).code;
+        const sb = serviceMeta(b.service).code;
+        if (sa !== sb) return sa.localeCompare(sb) * dir;
+        return compareJobNo(a, b, -1);
+      }
+      if (sortCol === "customer") {
+        const ca = (a.consignee || a.customer || "").trim();
+        const cb = (b.consignee || b.customer || "").trim();
+        if (ca !== cb) {
+          if (!ca || ca === "—") return 1;
+          if (!cb || cb === "—") return -1;
+          return ca.localeCompare(cb, "th") * dir;
+        }
+        return compareJobNo(a, b, -1);
+      }
+      if (sortCol === "status") {
+        const ra = STAGE_RANK[classifyJob(a)] ?? 9;
+        const rb = STAGE_RANK[classifyJob(b)] ?? 9;
+        if (ra !== rb) return (ra - rb) * dir;
+        return compareJobNo(a, b, -1);
+      }
+      return compareJobNo(a, b, dir);
     });
 
     return list;
-  }, [jobs, selectedMonths, serviceFilter, selectedCustomers, statusFilter, customsFilter, overdueOnly, q, jobSortDir]);
+  }, [jobs, selectedMonths, serviceFilter, selectedCustomers, statusFilter, customsFilter, overdueOnly, q, sortCol, jobSortDir]);
 
   // คำนวณจำนวนหน้าทั้งหมด
   const totalPages = Math.max(1, Math.ceil(filteredJobs.length / pageSize));
@@ -861,30 +901,79 @@ export default function JobsTable({
               <th className="py-3 px-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setJobSortDir((d) => (d === "asc" ? "desc" : "asc"));
-                    setPageNum(1);
-                  }}
-                  title={
-                    jobSortDir === "asc"
-                      ? "กำลังเรียง: เดือน 01→12 และลำดับงาน 0001→9999 (คลิกเพื่อเรียงจากล่าสุดลงมา)"
-                      : "กำลังเรียง: เดือน 12→01 และลำดับงานล่าสุด→0001 (คลิกเพื่อเรียงจาก 0001 ขึ้นไป)"
-                  }
+                  onClick={() => handleSort("jobNo")}
+                  title="คลิกเพื่อเรียงตามรหัสงาน Job No (ใหม่ไปเก่า / เก่าไปใหม่)"
                   className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
                 >
                   <span>Job No</span>
-                  {jobSortDir === "asc" ? (
-                    <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                  {sortCol === "jobNo" ? (
+                    jobSortDir === "asc" ? (
+                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                    ) : (
+                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                    )
                   ) : (
-                    <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                   )}
                 </button>
               </th>
-              <th className="py-3 px-3">บริการ</th>
-              <th className="py-3 px-4">
-                <span>ผู้นำเข้า / ส่งออก (Importer / Customer)</span>
+              <th className="py-3 px-3">
+                <button
+                  type="button"
+                  onClick={() => handleSort("service")}
+                  title="คลิกเพื่อเรียงตามประเภทบริการ (AIR-IMP / SEA-EXP / SEA-IMP / AIR-EXP)"
+                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                >
+                  <span>บริการ</span>
+                  {sortCol === "service" ? (
+                    jobSortDir === "asc" ? (
+                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                    ) : (
+                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                    )
+                  ) : (
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                </button>
               </th>
-              <th className="py-3 px-3">สถานะ</th>
+              <th className="py-3 px-4">
+                <button
+                  type="button"
+                  onClick={() => handleSort("customer")}
+                  title="คลิกเพื่อเรียงตามชื่อผู้นำเข้า / ส่งออก (A → Z / Z → A)"
+                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                >
+                  <span>ผู้นำเข้า / ส่งออก (Importer / Customer)</span>
+                  {sortCol === "customer" ? (
+                    jobSortDir === "asc" ? (
+                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                    ) : (
+                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                    )
+                  ) : (
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                </button>
+              </th>
+              <th className="py-3 px-3">
+                <button
+                  type="button"
+                  onClick={() => handleSort("status")}
+                  title="คลิกเพื่อเรียงตามสถานะ (Job Booking Request ➔ Job Control ➔ Job Waiting ➔ Job Complete)"
+                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                >
+                  <span>สถานะ</span>
+                  {sortCol === "status" ? (
+                    jobSortDir === "asc" ? (
+                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                    ) : (
+                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                    )
+                  ) : (
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                </button>
+              </th>
               <th className="py-3 px-3">B/L No. (MBL / HBL)</th>
               <th className="py-3 px-3">Invoice No</th>
               <th className="py-3 px-3">ETD / ETA</th>
