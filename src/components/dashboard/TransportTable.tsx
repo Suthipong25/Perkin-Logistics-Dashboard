@@ -15,10 +15,10 @@
  * ============================================================================
  */
 
-import React, { useState, useMemo } from "react";
-import { Search, ArrowUp, ArrowDown } from "lucide-react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { Search, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, Check } from "lucide-react";
 import { TransportRecord } from "@/types/dashboard";
-import { fmtNum, classifyContainer } from "@/lib/dashboard-helpers";
+import { fmtNum, classifyContainer, MONTH_FILTER_OPTIONS } from "@/lib/dashboard-helpers";
 
 /**
  * แยกองค์ประกอบรหัสเที่ยวรถ เช่น "TS26110012" -> { year: 26, month: 11, seq: 12 }
@@ -35,6 +35,29 @@ function parseTripNo(tsNo: string | undefined) {
     seq: parseInt(m[4], 10),
     raw,
   };
+}
+
+/**
+ * ดึงรหัสเดือน (YYYY-MM) จากเที่ยวรถ (ยึดจากรหัส TSYYMMxxxx เป็นหลัก หรือวันที่ส่งมอบ/รับตู้)
+ */
+function getTripMonth(r: TransportRecord): string | null {
+  const p = parseTripNo(r.transportNo || r.tripNo);
+  if (p.year >= 20 && p.month >= 1 && p.month <= 12) {
+    return `20${String(p.year).padStart(2, "0")}-${String(p.month).padStart(2, "0")}`;
+  }
+  const d = String(r.deliver || r.deliverDate || r.pickupDate || "").trim();
+  if (/^\d{4}-\d{2}/.test(d)) return d.slice(0, 7);
+  return null;
+}
+
+/**
+ * ลำดับความสำคัญของสถานะเที่ยวรถสำหรับจัดเรียง: กำลังวิ่ง (1) -> ส่งมอบแล้ว (2) -> ยกเลิก (3)
+ */
+function statusRank(status: string | undefined): number {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("ยกเลิก") || s.includes("cancel")) return 3;
+  if (s.includes("ส่งมอบ") || s.includes("เสร็จ") || s.includes("complete")) return 2;
+  return 1;
 }
 
 /* ============================================================================
@@ -58,23 +81,84 @@ export default function TransportTable({
   const [transQ, setTransQ] = useState("");
   // แท็บประเภทตู้คอนเทนเนอร์ที่เลือก ("all", "40' HQ/HC", "40' DC", "20' DC", "รถบรรทุก 4/6 ล้อ")
   const [transBucket, setTransBucket] = useState("all");
+  // กรองตามเดือนแบบ Checklist (เลือกได้หลายเดือน; ว่าง = ทุกเดือน)
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+  const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
+  const monthDropdownRef = useRef<HTMLDivElement>(null);
   // หน้าปัจจุบัน
   const [transPage, setTransPage] = useState(1);
   // ขนาดต่อหน้า (-1 หมายถึงแสดงทั้งหมด)
   const [transPageSize, setTransPageSize] = useState<number>(25);
-  // ทิศทางการเรียงลำดับเที่ยวรถ ("desc" = ใหม่ไปเก่า ค่าเริ่มต้น | "asc" = เก่าไปใหม่)
+  // คอลัมน์และทิศทางการเรียงลำดับ ("tsNo" | "status" | "deliverDate", "desc" = ใหม่ไปเก่า ค่าเริ่มต้น)
+  const [sortCol, setSortCol] = useState<"tsNo" | "status" | "deliverDate">("tsNo");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    if (!monthDropdownOpen) return;
+    function handleOutside(e: MouseEvent) {
+      if (monthDropdownRef.current && !monthDropdownRef.current.contains(e.target as Node)) {
+        setMonthDropdownOpen(false);
+      }
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMonthDropdownOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [monthDropdownOpen]);
+
+  const toggleMonth = (key: string) => {
+    setSelectedMonths((prev) =>
+      prev.includes(key) ? prev.filter((m) => m !== key) : [...prev, key]
+    );
+    setTransPage(1);
+  };
+
+  const handleSort = (col: "tsNo" | "status" | "deliverDate") => {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir(col === "status" ? "asc" : "desc");
+    }
+    setTransPage(1);
+  };
+
+  const monthOptions = useMemo(() => {
+    let baseList = transport;
+    if (transBucket !== "all") {
+      const target = transBucket === "LCL โกดัง" ? "รถบรรทุก 4/6 ล้อ" : transBucket;
+      baseList = baseList.filter((r) => classifyContainer(r.container) === target);
+    }
+    const counts = new Map<string, number>();
+    for (const r of baseList) {
+      const m = getTripMonth(r);
+      if (m) counts.set(m, (counts.get(m) || 0) + 1);
+    }
+    return MONTH_FILTER_OPTIONS.filter((m) => m.key !== "all").map((m) => ({
+      ...m,
+      count: counts.get(m.key) || 0,
+    }));
+  }, [transport, transBucket]);
 
   /* ==========================================================================
    * 2. FILTERED TRANSPORT RECORDS (MEMOIZED)
-   * กรองข้อมูลเที่ยวรถตามแท็บขนาดตู้และคำค้นหา พร้อมเรียงลำดับใหม่ไปเก่า
+   * กรองข้อมูลเที่ยวรถตามเดือน แท็บขนาดตู้ และคำค้นหา พร้อมเรียงลำดับตามคอลัมน์ที่เลือก
    * ========================================================================== */
   const filteredTransport = useMemo(() => {
     const trimmedQ = transQ.trim();
     const low = trimmedQ.toLowerCase();
     const compactLow = low.replace(/\s+/g, "");
+    const mSet = selectedMonths.length > 0 ? new Set(selectedMonths) : null;
 
     const list = transport.filter((r) => {
+      // 2.0 กรองตามเดือน
+      if (mSet && !mSet.has(getTripMonth(r) || "")) return false;
+
       // 2.1 กรองตามประเภทตู้
       if (transBucket !== "all") {
         const target = transBucket === "LCL โกดัง" ? "รถบรรทุก 4/6 ล้อ" : transBucket;
@@ -112,17 +196,37 @@ export default function TransportTable({
     });
 
     const dir = sortDir === "asc" ? 1 : -1;
-    list.sort((a, b) => {
+    const compareTripNo = (a: TransportRecord, b: TransportRecord, d: number) => {
       const pa = parseTripNo(a.transportNo || a.tripNo);
       const pb = parseTripNo(b.transportNo || b.tripNo);
-      if (pa.year !== pb.year) return (pa.year - pb.year) * dir;
-      if (pa.month !== pb.month) return (pa.month - pb.month) * dir;
-      if (pa.seq !== pb.seq) return (pa.seq - pb.seq) * dir;
-      return pa.raw.localeCompare(pb.raw) * dir;
+      if (pa.year !== pb.year) return (pa.year - pb.year) * d;
+      if (pa.month !== pb.month) return (pa.month - pb.month) * d;
+      if (pa.seq !== pb.seq) return (pa.seq - pb.seq) * d;
+      return pa.raw.localeCompare(pb.raw) * d;
+    };
+
+    list.sort((a, b) => {
+      if (sortCol === "status") {
+        const ra = statusRank(a.status);
+        const rb = statusRank(b.status);
+        if (ra !== rb) return (ra - rb) * dir;
+        return compareTripNo(a, b, -1);
+      }
+      if (sortCol === "deliverDate") {
+        const da = String(a.deliver || a.deliverDate || "").trim();
+        const db = String(b.deliver || b.deliverDate || "").trim();
+        if (da !== db) {
+          if (!da) return 1;
+          if (!db) return -1;
+          return da.localeCompare(db) * dir;
+        }
+        return compareTripNo(a, b, -1);
+      }
+      return compareTripNo(a, b, dir);
     });
 
     return list;
-  }, [transport, transBucket, transQ, sortDir]);
+  }, [transport, selectedMonths, transBucket, transQ, sortCol, sortDir]);
 
   // คำนวณจำนวนหน้าทั้งหมด
   const transTotalPages =
@@ -137,21 +241,23 @@ export default function TransportTable({
     return filteredTransport.slice(start, start + transPageSize);
   }, [filteredTransport, transPage, transPageSize]);
 
-  // สรุปยอดตามขนาดตู้คอนเทนเนอร์สำหรับแสดงตัวเลขบนแท็บ
+  // สรุปยอดตามขนาดตู้คอนเทนเนอร์สำหรับแสดงตัวเลขบนแท็บ (ตามเดือนที่เลือก)
   const bucketCounts = useMemo(() => {
+    const mSet = selectedMonths.length > 0 ? new Set(selectedMonths) : null;
+    const base = mSet ? transport.filter((r) => mSet.has(getTripMonth(r) || "")) : transport;
     const counts: Record<string, number> = {
-      all: transport.length,
+      all: base.length,
       "40' HQ/HC": 0,
       "40' DC": 0,
       "20' DC": 0,
       "รถบรรทุก 4/6 ล้อ": 0,
     };
-    for (const r of transport) {
+    for (const r of base) {
       const b = classifyContainer(r.container);
       counts[b] = (counts[b] || 0) + 1;
     }
     return counts;
-  }, [transport]);
+  }, [transport, selectedMonths]);
 
   /* ==========================================================================
    * 3. RENDER UI
@@ -215,6 +321,99 @@ export default function TransportTable({
               );
             })}
           </div>
+
+          {/* ดรอปดาวน์เลือกเดือนแบบ Checklist (เลือกได้หลายเดือน) */}
+          <div className="relative" ref={monthDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setMonthDropdownOpen((v) => !v)}
+              aria-expanded={monthDropdownOpen}
+              aria-haspopup="listbox"
+              aria-label="กรองเที่ยวรถตามเดือน (เลือกได้หลายเดือน)"
+              className={`h-9 px-3 rounded-lg border text-xs font-semibold outline-none inline-flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                selectedMonths.length > 0
+                  ? "border-[#0284c7] bg-[#f0f9ff] text-[#0369a1] ring-1 ring-[#0284c7]"
+                  : "border-slate-200 bg-white text-[#073766] hover:border-slate-300"
+              }`}
+            >
+              <span className="truncate max-w-[180px]">
+                {selectedMonths.length === 0
+                  ? "ทุกเดือน (All 12 Months)"
+                  : selectedMonths.length <= 2
+                  ? selectedMonths
+                      .map((k) => MONTH_FILTER_OPTIONS.find((m) => m.key === k)?.label || k)
+                      .join(", ")
+                  : `เลือกแล้ว ${selectedMonths.length} เดือน`}
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${
+                  monthDropdownOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {monthDropdownOpen && (
+              <div className="absolute left-0 top-full mt-1.5 z-50 w-[300px] max-w-[90vw] rounded-lg border border-slate-200 bg-white shadow-xl overflow-hidden">
+                <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 font-medium">
+                    เลือกได้หลายเดือน ({selectedMonths.length}/{monthOptions.length})
+                  </span>
+                  {selectedMonths.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedMonths([]);
+                        setTransPage(1);
+                      }}
+                      className="text-[#0284c7] hover:underline font-semibold cursor-pointer"
+                    >
+                      ทุกเดือน
+                    </button>
+                  )}
+                </div>
+
+                <div
+                  className="grid grid-cols-2 gap-1 p-2"
+                  role="listbox"
+                  aria-multiselectable="true"
+                >
+                  {monthOptions.map((m) => {
+                    const checked = selectedMonths.includes(m.key);
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        role="option"
+                        aria-selected={checked}
+                        onClick={() => toggleMonth(m.key)}
+                        className={`flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-md text-xs text-left cursor-pointer select-none border transition-colors ${
+                          checked
+                            ? "bg-[#f0f9ff] border-[#bae6fd] text-[#0369a1] font-semibold"
+                            : "border-transparent text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                              checked
+                                ? "bg-[#0284c7] border-[#0284c7] text-white"
+                                : "border-slate-300 bg-white"
+                            }`}
+                          >
+                            {checked && <Check className="w-3 h-3 stroke-[2.5]" />}
+                          </span>
+                          <span className="truncate">{m.label}</span>
+                        </div>
+                        <span className="font-mono text-[11px] text-slate-400 tabular-nums shrink-0">
+                          {m.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* สรุปจำนวนรายการที่พบ */}
@@ -233,22 +432,19 @@ export default function TransportTable({
               <th className="py-3 px-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-                    setTransPage(1);
-                  }}
-                  title={
-                    sortDir === "desc"
-                      ? "กำลังเรียง: ใหม่ไปเก่า (คลิกเพื่อเรียงเก่าไปใหม่)"
-                      : "กำลังเรียง: เก่าไปใหม่ (คลิกเพื่อเรียงใหม่ไปเก่า)"
-                  }
+                  onClick={() => handleSort("tsNo")}
+                  title="คลิกเพื่อเรียงตามรหัสเที่ยวรถ (ใหม่ไปเก่า / เก่าไปใหม่)"
                   className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
                 >
                   <span>รหัสเที่ยวรถ (TS NO)</span>
-                  {sortDir === "asc" ? (
-                    <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                  {sortCol === "tsNo" ? (
+                    sortDir === "asc" ? (
+                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                    ) : (
+                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                    )
                   ) : (
-                    <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                   )}
                 </button>
               </th>
@@ -256,8 +452,44 @@ export default function TransportTable({
               <th className="py-3 px-4">ลูกค้า & เส้นทาง (Customer & Route)</th>
               <th className="py-3 px-3">ประเภทตู้ / รถ</th>
               <th className="py-3 px-3">ผู้ให้บริการ / คนขับ / ทะเบียน</th>
-              <th className="py-3 px-3">สถานะ</th>
-              <th className="py-3 px-3">วันที่ส่งมอบ (Delivery)</th>
+              <th className="py-3 px-3">
+                <button
+                  type="button"
+                  onClick={() => handleSort("status")}
+                  title="คลิกเพื่อเรียงตามสถานะ (กำลังวิ่ง ➔ ส่งมอบแล้ว ➔ ยกเลิก)"
+                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                >
+                  <span>สถานะ</span>
+                  {sortCol === "status" ? (
+                    sortDir === "asc" ? (
+                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                    ) : (
+                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                    )
+                  ) : (
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                </button>
+              </th>
+              <th className="py-3 px-3">
+                <button
+                  type="button"
+                  onClick={() => handleSort("deliverDate")}
+                  title="คลิกเพื่อเรียงตามวันที่ส่งมอบ (ล่าสุดไปเก่าสุด / เก่าสุดไปล่าสุด)"
+                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                >
+                  <span>วันที่ส่งมอบ (Delivery)</span>
+                  {sortCol === "deliverDate" ? (
+                    sortDir === "asc" ? (
+                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                    ) : (
+                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                    )
+                  ) : (
+                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                  )}
+                </button>
+              </th>
               <th className="py-3 px-4">POD / สถานะเอกสาร</th>
             </tr>
           </thead>
