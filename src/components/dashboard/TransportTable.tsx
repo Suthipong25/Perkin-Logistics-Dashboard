@@ -16,7 +16,7 @@
  */
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { Search, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, Check } from "lucide-react";
+import { Search, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, Check, X } from "lucide-react";
 import { TransportRecord } from "@/types/dashboard";
 import { fmtNum, classifyContainer, MONTH_FILTER_OPTIONS } from "@/lib/dashboard-helpers";
 
@@ -89,9 +89,21 @@ export default function TransportTable({
   const [transPage, setTransPage] = useState(1);
   // ขนาดต่อหน้า (-1 หมายถึงแสดงทั้งหมด)
   const [transPageSize, setTransPageSize] = useState<number>(25);
-  // คอลัมน์และทิศทางการเรียงลำดับ ("tsNo" | "status" | "deliverDate", "desc" = ใหม่ไปเก่า ค่าเริ่มต้น)
-  const [sortCol, setSortCol] = useState<"tsNo" | "status" | "deliverDate">("tsNo");
+  // คอลัมน์และทิศทางการเรียงลำดับ ("tsNo" | "status" | "deliverDate" | "customer", "desc" = ใหม่ไปเก่า ค่าเริ่มต้น)
+  const [sortCol, setSortCol] = useState<"tsNo" | "status" | "deliverDate" | "customer">("tsNo");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const hasActiveFilters =
+    Boolean(transQ.trim()) ||
+    transBucket !== "all" ||
+    selectedMonths.length > 0;
+
+  const clearAllFilters = () => {
+    setTransQ("");
+    setTransBucket("all");
+    setSelectedMonths([]);
+    setTransPage(1);
+  };
 
   useEffect(() => {
     if (!monthDropdownOpen) return;
@@ -219,6 +231,16 @@ export default function TransportTable({
           if (!da) return 1;
           if (!db) return -1;
           return da.localeCompare(db) * dir;
+        }
+        return compareTripNo(a, b, -1);
+      }
+      if (sortCol === "customer") {
+        const ca = String(a.customer || "").trim();
+        const cb = String(b.customer || "").trim();
+        if (ca !== cb) {
+          if (!ca || ca === "—") return 1;
+          if (!cb || cb === "—") return -1;
+          return ca.localeCompare(cb, "th") * dir;
         }
         return compareTripNo(a, b, -1);
       }
@@ -414,12 +436,58 @@ export default function TransportTable({
               </div>
             )}
           </div>
+
+          {/* ปุ่มล้างตัวกรอง (1 คลิก) */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="h-9 px-3 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>ล้างตัวกรอง</span>
+            </button>
+          )}
         </div>
 
-        {/* สรุปจำนวนรายการที่พบ */}
-        <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
-          พบ <strong className="text-slate-900 num font-bold">{fmtNum(filteredTransport.length)}</strong> เที่ยวรถ
-        </span>
+        {/* Dropdown เลือกเรียงลำดับ & สรุปจำนวนรายการที่พบ */}
+        <div className="flex flex-wrap items-center gap-2.5 ml-auto">
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-slate-500 font-medium">เรียงตาม:</span>
+            <select
+              aria-label="เรียงลำดับรายการเที่ยวรถ"
+              value={`${sortCol}_${sortDir}`}
+              onChange={(e) => {
+                const [col, dir] = e.target.value.split("_") as [
+                  "tsNo" | "status" | "deliverDate" | "customer",
+                  "asc" | "desc"
+                ];
+                setSortCol(col);
+                setSortDir(dir);
+                setTransPage(1);
+              }}
+              className="h-9 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-[#073766] outline-none focus:border-[#f56a22] focus:ring-1 focus:ring-[#f56a22] cursor-pointer"
+            >
+              <option value="tsNo_desc">ใหม่สุดก่อน (TS NO)</option>
+              <option value="tsNo_asc">เก่าสุดก่อน (TS NO)</option>
+              <option value="customer_asc">ชื่อลูกค้า (A-Z / ก-ฮ)</option>
+              <option value="deliverDate_desc">วันที่ส่งมอบล่าสุดก่อน</option>
+              <option value="deliverDate_asc">วันที่ส่งมอบเก่าสุดก่อน</option>
+              {sortCol === "status" && (
+                <option value={`status_${sortDir}`}>
+                  สถานะ ({sortDir === "asc" ? "กำลังวิ่ง → ยกเลิก" : "ยกเลิก → กำลังวิ่ง"})
+                </option>
+              )}
+              {sortCol === "customer" && sortDir === "desc" && (
+                <option value="customer_desc">ชื่อลูกค้า (Z-A / ฮ-ก)</option>
+              )}
+            </select>
+          </div>
+
+          <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+            พบ <strong className="text-slate-900 num font-bold">{fmtNum(filteredTransport.length)}</strong> เที่ยวรถ
+          </span>
+        </div>
       </div>
 
       {/* --------------------------------------------------------------------
@@ -428,69 +496,74 @@ export default function TransportTable({
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse min-w-[1080px]">
           <thead>
-            <tr className="bg-[#f0f4f8] border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-              <th className="py-3 px-4">
+            <tr className="bg-[#f4f2ee] border-b border-slate-200 text-[12px] font-bold text-slate-700 whitespace-nowrap">
+              <th className="py-3.5 px-4">
                 <button
                   type="button"
                   onClick={() => handleSort("tsNo")}
                   title="คลิกเพื่อเรียงตามรหัสเที่ยวรถ (ใหม่ไปเก่า / เก่าไปใหม่)"
-                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                  className="inline-flex items-center gap-1.5 text-slate-800 hover:text-[#ea580c] cursor-pointer select-none"
                 >
                   <span>รหัสเที่ยวรถ (TS NO)</span>
                   {sortCol === "tsNo" ? (
-                    sortDir === "asc" ? (
-                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
-                    ) : (
-                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
-                    )
+                    <>
+                      <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded bg-[#fff7ed] text-[#c2410c] border border-[#fed7aa]">
+                        {sortDir === "desc" ? "ใหม่→เก่า" : "เก่า→ใหม่"}
+                      </span>
+                      {sortDir === "asc" ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-[#ea580c]" />
+                      ) : (
+                        <ArrowDown className="w-3.5 h-3.5 text-[#ea580c]" />
+                      )}
+                    </>
                   ) : (
                     <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                   )}
                 </button>
               </th>
-              <th className="py-3 px-3">Job No ที่ผูก</th>
-              <th className="py-3 px-4">ลูกค้า & เส้นทาง (Customer & Route)</th>
-              <th className="py-3 px-3">ประเภทตู้ / รถ</th>
-              <th className="py-3 px-3">ผู้ให้บริการ / คนขับ / ทะเบียน</th>
-              <th className="py-3 px-3">
+              <th className="py-3.5 px-3">Job No ที่ผูก</th>
+              <th className="py-3.5 px-4">ลูกค้า & เส้นทาง (Customer & Route)</th>
+              <th className="py-3.5 px-3">ประเภทตู้ / รถ</th>
+              <th className="py-3.5 px-3">ผู้ให้บริการ / คนขับ / ทะเบียน</th>
+              <th className="py-3.5 px-3">
                 <button
                   type="button"
                   onClick={() => handleSort("status")}
                   title="คลิกเพื่อเรียงตามสถานะ (กำลังวิ่ง ➔ ส่งมอบแล้ว ➔ ยกเลิก)"
-                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                  className="inline-flex items-center gap-1.5 text-slate-800 hover:text-[#ea580c] cursor-pointer select-none"
                 >
                   <span>สถานะ</span>
                   {sortCol === "status" ? (
                     sortDir === "asc" ? (
-                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                      <ArrowUp className="w-3.5 h-3.5 text-[#ea580c]" />
                     ) : (
-                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                      <ArrowDown className="w-3.5 h-3.5 text-[#ea580c]" />
                     )
                   ) : (
                     <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                   )}
                 </button>
               </th>
-              <th className="py-3 px-3">
+              <th className="py-3.5 px-3">
                 <button
                   type="button"
                   onClick={() => handleSort("deliverDate")}
                   title="คลิกเพื่อเรียงตามวันที่ส่งมอบ (ล่าสุดไปเก่าสุด / เก่าสุดไปล่าสุด)"
-                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                  className="inline-flex items-center gap-1.5 text-slate-800 hover:text-[#ea580c] cursor-pointer select-none"
                 >
                   <span>วันที่ส่งมอบ (Delivery)</span>
                   {sortCol === "deliverDate" ? (
                     sortDir === "asc" ? (
-                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                      <ArrowUp className="w-3.5 h-3.5 text-[#ea580c]" />
                     ) : (
-                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                      <ArrowDown className="w-3.5 h-3.5 text-[#ea580c]" />
                     )
                   ) : (
                     <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                   )}
                 </button>
               </th>
-              <th className="py-3 px-4">POD / สถานะเอกสาร</th>
+              <th className="py-3.5 px-4">POD / สถานะเอกสาร</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-[13px] tabular-nums">
@@ -511,7 +584,7 @@ export default function TransportTable({
                       type="button"
                       onClick={() => onSelectJobNo(r.jobNo!)}
                       aria-label={`เปิดดูรายละเอียดงาน ${r.jobNo}`}
-                      className="px-2.5 py-0.5 rounded-md border border-sky-200 bg-sky-50 hover:bg-[#073766] hover:text-white text-[#073766] font-mono text-xs font-semibold transition-[background-color,color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#073766] cursor-pointer"
+                      className="px-2.5 py-0.5 rounded-md border border-[#fed7aa] bg-[#fff7ed] hover:bg-[#ea580c] hover:border-[#ea580c] hover:text-white text-[#c2410c] font-mono text-xs font-semibold transition-[background-color,border-color,color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ea580c] cursor-pointer"
                     >
                       {r.jobNo}
                     </button>

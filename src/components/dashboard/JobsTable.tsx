@@ -222,20 +222,41 @@ export default function JobsTable({
   const [customsFilter, setCustomsFilter] = useState<string>(initialCustomsFilter);
   // เฉพาะงานที่เลยกำหนด ETD หรือไม่
   const [overdueOnly, setOverdueOnly] = useState(initialOverdueOnly);
-  // คอลัมน์และทิศทางการเรียงลำดับ ("jobNo" | "service" | "customer" | "status", "desc" = ใหม่ไปเก่า ค่าเริ่มต้น)
-  const [sortCol, setSortCol] = useState<"jobNo" | "service" | "customer" | "status">("jobNo");
+  // คอลัมน์และทิศทางการเรียงลำดับ ("jobNo" | "service" | "customer" | "status" | "etd", "desc" = ใหม่ไปเก่า ค่าเริ่มต้น)
+  const [sortCol, setSortCol] = useState<"jobNo" | "service" | "customer" | "status" | "etd">("jobNo");
   const [jobSortDir, setJobSortDir] = useState<"asc" | "desc">("desc");
   // หน้าปัจจุบัน
   const [pageNum, setPageNum] = useState(1);
   const pageSize = 25;
 
-  const handleSort = (col: "jobNo" | "service" | "customer" | "status") => {
+  const handleSort = (col: "jobNo" | "service" | "customer" | "status" | "etd") => {
     if (sortCol === col) {
       setJobSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortCol(col);
-      setJobSortDir(col === "jobNo" ? "desc" : "asc");
+      setJobSortDir(col === "jobNo" || col === "etd" ? "desc" : "asc");
     }
+    setPageNum(1);
+  };
+
+  const hasActiveFilters =
+    Boolean(q.trim()) ||
+    serviceFilter !== "all" ||
+    selectedMonths.length > 0 ||
+    selectedCustomers.length > 0 ||
+    statusFilter !== "all" ||
+    customsFilter !== "all" ||
+    overdueOnly;
+
+  const clearAllFilters = () => {
+    setQ("");
+    setServiceFilter("all");
+    setSelectedMonths([]);
+    setMonthFilter("all");
+    setSelectedCustomers([]);
+    setStatusFilter("all");
+    setCustomsFilter("all");
+    setOverdueOnly(false);
     setPageNum(1);
   };
 
@@ -450,6 +471,16 @@ export default function JobsTable({
         const ra = STAGE_RANK[classifyJob(a)] ?? 9;
         const rb = STAGE_RANK[classifyJob(b)] ?? 9;
         if (ra !== rb) return (ra - rb) * dir;
+        return compareJobNo(a, b, -1);
+      }
+      if (sortCol === "etd") {
+        const ea = String(a.etd || a.jobDate || "").trim();
+        const eb = String(b.etd || b.jobDate || "").trim();
+        if (ea !== eb) {
+          if (!ea) return 1;
+          if (!eb) return -1;
+          return ea.localeCompare(eb) * dir;
+        }
         return compareJobNo(a, b, -1);
       }
       return compareJobNo(a, b, dir);
@@ -763,24 +794,6 @@ export default function JobsTable({
           </div>
         )}
 
-        {/* ดรอปดาวน์กรองสถานะ */}
-        <select
-          value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value);
-            setPageNum(1);
-          }}
-          aria-label="กรองตามสถานะ"
-          className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-800 focus:border-[#f56a22] focus:ring-1 focus:ring-[#f56a22] outline-none"
-        >
-          <option value="all">ทุกสถานะ (All)</option>
-          <option value="Booking">Job Booking Request</option>
-          <option value="Control">Job Control</option>
-          <option value="Waiting">Job Waiting</option>
-          <option value="Completed">Job Complete</option>
-          <option value="Cancelled">Job Cancelled</option>
-        </select>
-
         {/* ตัวเลือกเฉพาะงานเกินกำหนด ETD */}
         <label className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 cursor-pointer select-none hover:bg-slate-50 transition-colors">
           <input
@@ -795,15 +808,65 @@ export default function JobsTable({
           <span>เฉพาะเกินกำหนด</span>
         </label>
 
-        {/* จำนวนงานที่พบ */}
-        <span className="ml-auto text-xs font-medium text-slate-500">
-          พบ <strong className="text-slate-900 num font-bold">{fmtNum(filteredJobs.length)}</strong> งาน
-        </span>
+        {/* ปุ่มล้างตัวกรองทั้งหมด (1 คลิก) */}
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="h-9 px-3 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>ล้างตัวกรอง</span>
+          </button>
+        )}
+
+        {/* Dropdown เลือกเรียงลำดับ & จำนวนงานที่พบ */}
+        <div className="ml-auto flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-slate-500 font-medium">เรียงตาม:</span>
+            <select
+              aria-label="เรียงลำดับรายการงาน"
+              value={`${sortCol}_${jobSortDir}`}
+              onChange={(e) => {
+                const [col, dir] = e.target.value.split("_") as [
+                  "jobNo" | "service" | "customer" | "status" | "etd",
+                  "asc" | "desc"
+                ];
+                setSortCol(col);
+                setJobSortDir(dir);
+                setPageNum(1);
+              }}
+              className="h-9 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-[#073766] outline-none focus:border-[#f56a22] focus:ring-1 focus:ring-[#f56a22] cursor-pointer"
+            >
+              <option value="jobNo_desc">ใหม่สุดก่อน (Job No)</option>
+              <option value="jobNo_asc">เก่าสุดก่อน (Job No)</option>
+              <option value="customer_asc">ชื่อลูกค้า (A-Z / ก-ฮ)</option>
+              <option value="etd_asc">ETD ใกล้สุดก่อน</option>
+              <option value="etd_desc">ETD ล่าสุดก่อน</option>
+              {sortCol === "service" && (
+                <option value={`service_${jobSortDir}`}>
+                  ประเภทบริการ ({jobSortDir === "asc" ? "A → Z" : "Z → A"})
+                </option>
+              )}
+              {sortCol === "status" && (
+                <option value={`status_${jobSortDir}`}>
+                  สถานะงาน ({jobSortDir === "asc" ? "Booking → Complete" : "Complete → Booking"})
+                </option>
+              )}
+              {sortCol === "customer" && jobSortDir === "desc" && (
+                <option value="customer_desc">ชื่อลูกค้า (Z-A / ฮ-ก)</option>
+              )}
+            </select>
+          </div>
+
+          <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+            พบ <strong className="text-slate-900 num font-bold">{fmtNum(filteredJobs.length)}</strong> งาน
+          </span>
+        </div>
       </div>
 
       {/* --------------------------------------------------------------------
        * FWD SYSTEM STATUS FILTER BAR: ตัวกรองด่วนตามสถานะ FWD System
-       * Flow: Job Booking Request > Job Control > Job Waiting > Job Complete
        * -------------------------------------------------------------------- */}
       <div className="px-4 py-2.5 bg-[#f8fafc] border-b border-[#dce2e8] flex flex-wrap items-center gap-2 text-xs">
         <span className="font-semibold text-[#073766] flex items-center gap-1.5 mr-1 select-none">
@@ -813,11 +876,12 @@ export default function JobsTable({
 
         {/* ปุ่ม ทั้งหมด */}
         <button
+          type="button"
           onClick={() => {
             setStatusFilter("all");
             setPageNum(1);
           }}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-[background-color,border-color,color,box-shadow] duration-150 ease-out text-xs font-medium cursor-pointer ${
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-[background-color,border-color,color,box-shadow] duration-150 ease-out text-xs font-medium cursor-pointer ${
             statusFilter === "all"
               ? "bg-[#071a2f] border-[#071a2f] text-white shadow-sm font-semibold"
               : "bg-white border-[#dce2e8] text-[#526275] hover:bg-slate-100 hover:text-[#102238]"
@@ -825,7 +889,7 @@ export default function JobsTable({
         >
           <span>ทั้งหมด</span>
           <span
-            className={`px-1.5 py-0.2 text-[11px] rounded-full font-mono font-semibold ${
+            className={`px-1.5 py-0.2 text-[11px] rounded-md font-mono font-semibold ${
               statusFilter === "all"
                 ? "bg-white/20 text-white"
                 : "bg-slate-100 text-[#526275]"
@@ -835,53 +899,45 @@ export default function JobsTable({
           </span>
         </button>
 
-        {FWD_STATUS_STEPS.map((step, idx) => {
+        {FWD_STATUS_STEPS.map((step) => {
           const isActive = statusFilter === step.code;
           const count = fwdCounts[step.code] || 0;
           return (
-            <React.Fragment key={step.code}>
-              {idx > 0 && idx < 4 && (
-                <span className="text-[#94a3b8] font-bold select-none text-xs hidden sm:inline px-0.5">
-                  &gt;
-                </span>
-              )}
-              {idx === 4 && (
-                <span className="text-[#cbd5e1] select-none mx-1 hidden sm:inline">|</span>
-              )}
-              <button
-                onClick={() => {
-                  setStatusFilter(isActive ? "all" : step.code);
-                  setPageNum(1);
-                }}
-                title={`${step.desc} (คลิกเพื่อกรอง / คลิกซ้ำเพื่อยกเลิก)`}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-[background-color,border-color,color,box-shadow] duration-150 ease-out text-xs font-medium cursor-pointer ${
-                  isActive
-                    ? `${step.activeBg} shadow-sm font-semibold`
-                    : `bg-white ${step.inactiveBorder}`
+            <button
+              key={step.code}
+              type="button"
+              onClick={() => {
+                setStatusFilter(isActive ? "all" : step.code);
+                setPageNum(1);
+              }}
+              title={`${step.desc} (คลิกเพื่อกรอง / คลิกซ้ำเพื่อยกเลิก)`}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-[background-color,border-color,color,box-shadow] duration-150 ease-out text-xs font-medium cursor-pointer ${
+                isActive
+                  ? `${step.activeBg} shadow-sm font-semibold`
+                  : `bg-white ${step.inactiveBorder}`
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isActive ? "bg-white" : step.dotColor
+                }`}
+              />
+              <span>{step.name}</span>
+              <span
+                className={`px-1.5 py-0.2 text-[11px] rounded-md font-mono font-semibold ${
+                  isActive ? "bg-white/25 text-white" : step.badgeInactive
                 }`}
               >
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    isActive ? "bg-white" : step.dotColor
-                  }`}
-                />
-                <span>{step.name}</span>
-                <span
-                  className={`px-1.5 py-0.2 text-[11px] rounded-full font-mono font-semibold ${
-                    isActive ? "bg-white/25 text-white" : step.badgeInactive
-                  }`}
-                >
-                  {fmtNum(count)}
-                </span>
-              </button>
-            </React.Fragment>
+                {fmtNum(count)}
+              </span>
+            </button>
           );
         })}
 
         {/* แสดงคำอธิบายของสถานะที่เลือกอยู่ */}
         {statusFilter !== "all" && (
-          <span className="ml-auto text-[11.5px] text-[#073766] font-medium bg-[#eaf4fc] px-2.5 py-1 rounded-md border border-[#073766]/15 hidden md:inline-flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#073766]" />
+          <span className="ml-auto text-[11.5px] text-[#9a3412] font-medium bg-[#fff7ed] px-2.5 py-1 rounded-lg border border-[#fed7aa] hidden md:inline-flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#ea580c]" />
             {statusFilter === "Booking" && "Job Booking Request: คำขอเปิดงาน / จองระวางเรือ-เครื่องบิน"}
             {statusFilter === "Control" && "Job Control: อยู่ระหว่างควบคุมและดำเนินงานขนส่ง"}
             {statusFilter === "Waiting" && "Job Waiting: รอเอกสาร / รอตรวจสอบ / รอปล่อยสินค้า"}
@@ -897,89 +953,94 @@ export default function JobsTable({
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse min-w-[980px]">
           <thead>
-            <tr className="bg-[#f0f4f8] border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap">
-              <th className="py-3 px-4">
+            <tr className="bg-[#f4f2ee] border-b border-slate-200 text-[12px] font-bold text-slate-700 whitespace-nowrap">
+              <th className="py-3.5 px-4">
                 <button
                   type="button"
                   onClick={() => handleSort("jobNo")}
                   title="คลิกเพื่อเรียงตามรหัสงาน Job No (ใหม่ไปเก่า / เก่าไปใหม่)"
-                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                  className="inline-flex items-center gap-1.5 text-slate-800 hover:text-[#ea580c] cursor-pointer select-none"
                 >
                   <span>Job No</span>
                   {sortCol === "jobNo" ? (
-                    jobSortDir === "asc" ? (
-                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
-                    ) : (
-                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
-                    )
+                    <>
+                      <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded bg-[#fff7ed] text-[#c2410c] border border-[#fed7aa]">
+                        {jobSortDir === "desc" ? "ใหม่→เก่า" : "เก่า→ใหม่"}
+                      </span>
+                      {jobSortDir === "asc" ? (
+                        <ArrowUp className="w-3.5 h-3.5 text-[#ea580c]" />
+                      ) : (
+                        <ArrowDown className="w-3.5 h-3.5 text-[#ea580c]" />
+                      )}
+                    </>
                   ) : (
                     <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                   )}
                 </button>
               </th>
-              <th className="py-3 px-3">
+              <th className="py-3.5 px-3">
                 <button
                   type="button"
                   onClick={() => handleSort("service")}
                   title="คลิกเพื่อเรียงตามประเภทบริการ (AIR-IMP / SEA-EXP / SEA-IMP / AIR-EXP)"
-                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                  className="inline-flex items-center gap-1.5 text-slate-800 hover:text-[#ea580c] cursor-pointer select-none"
                 >
                   <span>บริการ</span>
                   {sortCol === "service" ? (
                     jobSortDir === "asc" ? (
-                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                      <ArrowUp className="w-3.5 h-3.5 text-[#ea580c]" />
                     ) : (
-                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                      <ArrowDown className="w-3.5 h-3.5 text-[#ea580c]" />
                     )
                   ) : (
                     <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                   )}
                 </button>
               </th>
-              <th className="py-3 px-4">
+              <th className="py-3.5 px-4">
                 <button
                   type="button"
                   onClick={() => handleSort("customer")}
                   title="คลิกเพื่อเรียงตามชื่อผู้นำเข้า / ส่งออก (A → Z / Z → A)"
-                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                  className="inline-flex items-center gap-1.5 text-slate-800 hover:text-[#ea580c] cursor-pointer select-none"
                 >
                   <span>ผู้นำเข้า / ส่งออก (Importer / Customer)</span>
                   {sortCol === "customer" ? (
                     jobSortDir === "asc" ? (
-                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                      <ArrowUp className="w-3.5 h-3.5 text-[#ea580c]" />
                     ) : (
-                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                      <ArrowDown className="w-3.5 h-3.5 text-[#ea580c]" />
                     )
                   ) : (
                     <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                   )}
                 </button>
               </th>
-              <th className="py-3 px-3">
+              <th className="py-3.5 px-3">
                 <button
                   type="button"
                   onClick={() => handleSort("status")}
                   title="คลิกเพื่อเรียงตามสถานะ (Job Booking Request ➔ Job Control ➔ Job Waiting ➔ Job Complete)"
-                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                  className="inline-flex items-center gap-1.5 text-slate-800 hover:text-[#ea580c] cursor-pointer select-none"
                 >
                   <span>สถานะ</span>
                   {sortCol === "status" ? (
                     jobSortDir === "asc" ? (
-                      <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                      <ArrowUp className="w-3.5 h-3.5 text-[#ea580c]" />
                     ) : (
-                      <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                      <ArrowDown className="w-3.5 h-3.5 text-[#ea580c]" />
                     )
                   ) : (
                     <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                   )}
                 </button>
               </th>
-              <th className="py-3 px-3">B/L No. (MBL / HBL)</th>
-              <th className="py-3 px-3">Invoice No</th>
-              <th className="py-3 px-3">ETD / ETA</th>
-              <th className="py-3 px-3">สายเรือ / ตู้ / เส้นทาง</th>
-              <th className="py-3 px-3">CS</th>
-              <th className="py-3 px-3 min-w-[200px]">Update Status</th>
+              <th className="py-3.5 px-3">B/L No. (MBL / HBL)</th>
+              <th className="py-3.5 px-3">Invoice No</th>
+              <th className="py-3.5 px-3">ETD / ETA</th>
+              <th className="py-3.5 px-3">สายเรือ / ตู้ / เส้นทาง</th>
+              <th className="py-3.5 px-3">CS</th>
+              <th className="py-3.5 px-3 min-w-[200px]">Update Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-[13px] tabular-nums">
