@@ -175,6 +175,7 @@ export default function JobsTable({
   // ซิงค์เฉพาะเมื่อผู้ใช้เปลี่ยนเดือนจากแถบด้านบนของหน้า Overview
   useEffect(() => {
     setSelectedMonths(monthFilter && monthFilter !== "all" ? [monthFilter] : []);
+    setPageNum(1);
   }, [monthFilter]);
 
   // ปิดเมนู Checklist เมื่อคลิกด้านนอกหรือกดปุ่ม Escape (รวมศูนย์ใน Effect เดียว)

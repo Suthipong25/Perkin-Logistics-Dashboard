@@ -194,11 +194,54 @@ export default function DashboardClient({
     setMounted(true);
   }, []);
 
-  // ค้นหา Job Record ที่กำลังเลือกเปิดดูใน Drawer
+  // ค้นหา Job Record ที่กำลังเลือกเปิดดูใน Drawer + ดัชนี O(1) สำหรับหน้า Advances
   const selectedJob = useMemo(
     () => jobs.find((j) => j.jobNo === selectedJobNo) || null,
     [jobs, selectedJobNo]
   );
+
+  const { jobNoSet, completedJobNoSet } = useMemo(() => {
+    const allSet = new Set<string>();
+    const doneSet = new Set<string>();
+    for (const j of jobs) {
+      if (j.jobNo) {
+        allSet.add(j.jobNo);
+        if (j.status === "Completed" || j.cleared) doneSet.add(j.jobNo);
+      }
+    }
+    return { jobNoSet: allSet, completedJobNoSet: doneSet };
+  }, [jobs]);
+
+  const filteredAdvances = useMemo(() => {
+    const trimmed = advQ.trim().toLowerCase();
+    const compactLow = trimmed.replace(/\s+/g, "");
+    return advances
+      .map((r) => {
+        const isJobCleared =
+          r.state === "cleared" ||
+          Boolean(r.clearNo && r.clearNo !== "—") ||
+          completedJobNoSet.has(r.jobNo);
+        return isJobCleared
+          ? { ...r, state: "cleared" as const, cleared: r.cleared ?? r.amount, ageDays: 0 }
+          : r;
+      })
+      .filter((r) => {
+        if (advState !== "all" && r.state !== advState) return false;
+        if (trimmed) {
+          return [
+            r.advNo, r.jobNo, r.joinNo, r.obl, r.hbl,
+            r.customer, r.payTo, r.clearNo, r.recPayDocNo, r.batchAdvNo, r.shipping,
+          ].some((v) => {
+            const str = String(v || "").toLowerCase();
+            return str.includes(trimmed) || (compactLow.length >= 4 && str.replace(/\s+/g, "").includes(compactLow));
+          });
+        }
+        return true;
+      })
+      .sort((a, b) =>
+        advSortDir === "desc" ? b.advNo.localeCompare(a.advNo) : a.advNo.localeCompare(b.advNo)
+      );
+  }, [advances, completedJobNoSet, advState, advQ, advSortDir]);
 
   /* ==========================================================================
    * 4. KEYBOARD SHORTCUTS
@@ -465,61 +508,9 @@ export default function DashboardClient({
 
           {/* VIEW 4: SHIPPING ADVANCES & CLEARING */}
           {page === "advances" && (() => {
-            const filteredAdv = [...advances]
-              .map((r) => {
-                const linkedJob = jobs.find((j) => j.jobNo === r.jobNo);
-                const isJobCleared =
-                  r.state === "cleared" ||
-                  Boolean(r.clearNo && r.clearNo !== "—") ||
-                  Boolean(
-                    linkedJob &&
-                      (linkedJob.status === "Completed" || linkedJob.cleared)
-                  );
-                return isJobCleared
-                  ? {
-                      ...r,
-                      state: "cleared" as const,
-                      cleared: r.cleared ?? r.amount,
-                      ageDays: 0,
-                    }
-                  : r;
-              })
-              .filter((r) => {
-                if (advState !== "all" && r.state !== advState)
-                  return false;
-                if (advQ.trim()) {
-                  const low = advQ.trim().toLowerCase();
-                  const compactLow = low.replace(/\s+/g, "");
-                  return [
-                    r.advNo,
-                    r.jobNo,
-                    r.joinNo,
-                    r.obl,
-                    r.hbl,
-                    r.customer,
-                    r.payTo,
-                    r.clearNo,
-                    r.recPayDocNo,
-                    r.batchAdvNo,
-                    r.shipping,
-                  ].some((v) => {
-                    const str = String(v || "").toLowerCase();
-                    return (
-                      str.includes(low) ||
-                      (compactLow.length >= 4 && str.replace(/\s+/g, "").includes(compactLow))
-                    );
-                  });
-                }
-                return true;
-              })
-              .sort((a, b) =>
-                advSortDir === "desc"
-                  ? b.advNo.localeCompare(a.advNo)
-                  : a.advNo.localeCompare(b.advNo)
-              );
-
-            const advTotalPages = Math.max(1, Math.ceil(filteredAdv.length / advPageSize));
-            const pagedAdv = filteredAdv.slice((advPage - 1) * advPageSize, advPage * advPageSize);
+            const advTotalPages = Math.max(1, Math.ceil(filteredAdvances.length / advPageSize));
+            const safeAdvPage = Math.min(advPage, advTotalPages);
+            const pagedAdv = filteredAdvances.slice((safeAdvPage - 1) * advPageSize, safeAdvPage * advPageSize);
 
             return (
               <section className="bg-white rounded-[12px] border border-[#dce2e8] shadow-xs overflow-hidden">
@@ -565,36 +556,36 @@ export default function DashboardClient({
                   </div>
 
                   <span className="text-xs font-medium text-slate-500">
-                    พบ <strong className="text-slate-900 font-bold tabular-nums">{fmtNum(filteredAdv.length)}</strong> รายการ
+                    พบ <strong className="text-slate-900 font-bold tabular-nums">{fmtNum(filteredAdvances.length)}</strong> รายการ
                   </span>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse min-w-[1160px]">
                     <thead>
-                      <tr className="bg-[#f0f4f8] border-b border-[#dce2e8] text-[11px] font-semibold uppercase tracking-wider text-[#526275] whitespace-nowrap">
-                        <th className="py-3 px-4">
+                      <tr className="bg-[#f4f2ee] border-b border-slate-200 text-[12px] font-bold text-slate-700 whitespace-nowrap">
+                        <th className="py-3.5 px-4">
                           <button
                             type="button"
                             onClick={() => {
                               setAdvSortDir((d) => (d === "desc" ? "asc" : "desc"));
                               setAdvPage(1);
                             }}
-                            className="inline-flex items-center gap-1 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer"
+                            className="inline-flex items-center gap-1.5 text-slate-800 hover:text-[#ea580c] cursor-pointer"
                           >
                             <span>Adv. No {advSortDir === "desc" ? "↓" : "↑"}</span>
                           </button>
                         </th>
-                        <th className="py-3 px-3">Job No</th>
-                        <th className="py-3 px-4">ผู้รับเงิน / Shipping (Pay To)</th>
-                        <th className="py-3 px-4">ลูกค้า (Customer)</th>
-                        <th className="py-3 px-3">วันที่เบิก</th>
-                        <th className="py-3 px-3 text-right">ยอดเบิก (Advance)</th>
-                        <th className="py-3 px-3 text-right">ยอดเคลียร์ (Clear)</th>
-                        <th className="py-3 px-3 text-right">ส่วนต่าง (DIFF)</th>
-                        <th className="py-3 px-3">Clear No / วันที่เคลียร์</th>
-                        <th className="py-3 px-3">RV/AV &amp; Batch</th>
-                        <th className="py-3 px-3">สถานะ</th>
+                        <th className="py-3.5 px-3">Job No</th>
+                        <th className="py-3.5 px-4">ผู้รับเงิน / Shipping (Pay To)</th>
+                        <th className="py-3.5 px-4">ลูกค้า (Customer)</th>
+                        <th className="py-3.5 px-3">วันที่เบิก</th>
+                        <th className="py-3.5 px-3 text-right">ยอดเบิก (Advance)</th>
+                        <th className="py-3.5 px-3 text-right">ยอดเคลียร์ (Clear)</th>
+                        <th className="py-3.5 px-3 text-right">ส่วนต่าง (DIFF)</th>
+                        <th className="py-3.5 px-3">Clear No / วันที่เคลียร์</th>
+                        <th className="py-3.5 px-3">RV/AV &amp; Batch</th>
+                        <th className="py-3.5 px-3">สถานะ</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#dce2e8] text-[13px] tabular-nums">
@@ -607,14 +598,14 @@ export default function DashboardClient({
                             role="button"
                             aria-label={`เปิดดูงาน ${r.jobNo} ของเงินทดรองจ่าย ${r.advNo}`}
                             onClick={() => {
-                              if (jobs.some((j) => j.jobNo === r.jobNo)) {
+                              if (jobNoSet.has(r.jobNo)) {
                                 setSelectedJobNo(r.jobNo);
                               }
                             }}
                             onKeyDown={(e) => {
                               if (e.key === "Enter" || e.key === " ") {
                                 e.preventDefault();
-                                if (jobs.some((j) => j.jobNo === r.jobNo)) {
+                                if (jobNoSet.has(r.jobNo)) {
                                   setSelectedJobNo(r.jobNo);
                                 }
                               }
@@ -707,12 +698,12 @@ export default function DashboardClient({
                 {/* Pagination */}
                 <div className="px-4 py-3 border-t border-[#dce2e8] bg-[#f8fafc] flex items-center justify-between text-[13px] text-[#526275]">
                   <span>
-                    หน้า <b className="text-[#102238]">{advPage}</b> จาก {advTotalPages} (ทั้งหมด {fmtNum(filteredAdv.length)} รายการ)
+                    หน้า <b className="text-[#102238]">{safeAdvPage}</b> จาก {advTotalPages} (ทั้งหมด {fmtNum(filteredAdvances.length)} รายการ)
                   </span>
                   <div className="flex gap-1.5">
                     <button
                       type="button"
-                      disabled={advPage <= 1}
+                      disabled={safeAdvPage <= 1}
                       onClick={() => setAdvPage((p) => Math.max(1, p - 1))}
                       className="px-3 py-1 rounded border border-[#c5cfd9] bg-white disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
                     >
@@ -720,7 +711,7 @@ export default function DashboardClient({
                     </button>
                     <button
                       type="button"
-                      disabled={advPage >= advTotalPages}
+                      disabled={safeAdvPage >= advTotalPages}
                       onClick={() => setAdvPage((p) => Math.min(advTotalPages, p + 1))}
                       className="px-3 py-1 rounded border border-[#c5cfd9] bg-white disabled:opacity-40 hover:bg-slate-50 cursor-pointer"
                     >
