@@ -16,9 +16,26 @@
  */
 
 import React, { useState, useMemo } from "react";
-import { Search } from "lucide-react";
+import { Search, ArrowUp, ArrowDown } from "lucide-react";
 import { TransportRecord } from "@/types/dashboard";
 import { fmtNum, classifyContainer } from "@/lib/dashboard-helpers";
+
+/**
+ * แยกองค์ประกอบรหัสเที่ยวรถ เช่น "TS26110012" -> { year: 26, month: 11, seq: 12 }
+ */
+function parseTripNo(tsNo: string | undefined) {
+  const raw = String(tsNo || "").trim().toUpperCase();
+  const m = raw.match(/^([A-Z]+)(\d{2})(\d{2})(\d+)$/);
+  if (!m) {
+    return { year: 0, month: 0, seq: 0, raw };
+  }
+  return {
+    year: parseInt(m[2], 10),
+    month: parseInt(m[3], 10),
+    seq: parseInt(m[4], 10),
+    raw,
+  };
+}
 
 /* ============================================================================
  * PROPS INTERFACE
@@ -45,13 +62,19 @@ export default function TransportTable({
   const [transPage, setTransPage] = useState(1);
   // ขนาดต่อหน้า (-1 หมายถึงแสดงทั้งหมด)
   const [transPageSize, setTransPageSize] = useState<number>(25);
+  // ทิศทางการเรียงลำดับเที่ยวรถ ("desc" = ใหม่ไปเก่า ค่าเริ่มต้น | "asc" = เก่าไปใหม่)
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   /* ==========================================================================
    * 2. FILTERED TRANSPORT RECORDS (MEMOIZED)
-   * กรองข้อมูลเที่ยวรถตามแท็บขนาดตู้และคำค้นหา
+   * กรองข้อมูลเที่ยวรถตามแท็บขนาดตู้และคำค้นหา พร้อมเรียงลำดับใหม่ไปเก่า
    * ========================================================================== */
   const filteredTransport = useMemo(() => {
-    return transport.filter((r) => {
+    const trimmedQ = transQ.trim();
+    const low = trimmedQ.toLowerCase();
+    const compactLow = low.replace(/\s+/g, "");
+
+    const list = transport.filter((r) => {
       // 2.1 กรองตามประเภทตู้
       if (transBucket !== "all") {
         const target = transBucket === "LCL โกดัง" ? "รถบรรทุก 4/6 ล้อ" : transBucket;
@@ -59,8 +82,7 @@ export default function TransportTable({
       }
 
       // 2.2 กรองคำค้นหา
-      if (transQ.trim()) {
-        const low = transQ.toLowerCase();
+      if (trimmedQ) {
         return [
           r.transportNo,
           r.tripNo,
@@ -78,15 +100,29 @@ export default function TransportTable({
           r.pickupLocation,
           r.deliveryLocation,
           r.returnDepot,
-        ].some((v) =>
-          String(v || "")
-            .toLowerCase()
-            .includes(low)
-        );
+        ].some((v) => {
+          const str = String(v || "").toLowerCase();
+          return (
+            str.includes(low) ||
+            (compactLow.length >= 4 && str.replace(/\s+/g, "").includes(compactLow))
+          );
+        });
       }
       return true;
     });
-  }, [transport, transBucket, transQ]);
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      const pa = parseTripNo(a.transportNo || a.tripNo);
+      const pb = parseTripNo(b.transportNo || b.tripNo);
+      if (pa.year !== pb.year) return (pa.year - pb.year) * dir;
+      if (pa.month !== pb.month) return (pa.month - pb.month) * dir;
+      if (pa.seq !== pb.seq) return (pa.seq - pb.seq) * dir;
+      return pa.raw.localeCompare(pb.raw) * dir;
+    });
+
+    return list;
+  }, [transport, transBucket, transQ, sortDir]);
 
   // คำนวณจำนวนหน้าทั้งหมด
   const transTotalPages =
@@ -194,7 +230,28 @@ export default function TransportTable({
         <table className="w-full text-left border-collapse min-w-[1080px]">
           <thead>
             <tr className="bg-[#f0f4f8] border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-              <th className="py-3 px-4">รหัสเที่ยวรถ (TS NO)</th>
+              <th className="py-3 px-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                    setTransPage(1);
+                  }}
+                  title={
+                    sortDir === "desc"
+                      ? "กำลังเรียง: ใหม่ไปเก่า (คลิกเพื่อเรียงเก่าไปใหม่)"
+                      : "กำลังเรียง: เก่าไปใหม่ (คลิกเพื่อเรียงใหม่ไปเก่า)"
+                  }
+                  className="inline-flex items-center gap-1.5 uppercase tracking-wider text-slate-700 hover:text-[#073766] cursor-pointer select-none"
+                >
+                  <span>รหัสเที่ยวรถ (TS NO)</span>
+                  {sortDir === "asc" ? (
+                    <ArrowUp className="w-3.5 h-3.5 text-[#0284c7]" />
+                  ) : (
+                    <ArrowDown className="w-3.5 h-3.5 text-[#0284c7]" />
+                  )}
+                </button>
+              </th>
               <th className="py-3 px-3">Job No ที่ผูก</th>
               <th className="py-3 px-4">ลูกค้า & เส้นทาง (Customer & Route)</th>
               <th className="py-3 px-3">ประเภทตู้ / รถ</th>
