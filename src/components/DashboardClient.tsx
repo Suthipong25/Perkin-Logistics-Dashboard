@@ -520,51 +520,9 @@ export default function DashboardClient({
 
             const advTotalPages = Math.max(1, Math.ceil(filteredAdv.length / advPageSize));
             const pagedAdv = filteredAdv.slice((advPage - 1) * advPageSize, advPage * advPageSize);
-            const sumAdvance = filteredAdv.reduce((s, r) => s + (r.amount || 0), 0);
-            const sumCleared = filteredAdv.reduce((s, r) => s + (r.cleared ?? 0), 0);
-            const sumDiff = filteredAdv.reduce(
-              (s, r) => s + (r.diff !== undefined ? r.diff : (r.amount || 0) - (r.cleared ?? 0)),
-              0
-            );
 
             return (
               <section className="bg-white rounded-[12px] border border-[#dce2e8] shadow-xs overflow-hidden">
-                {/* Summary KPI Strip from Advance Report */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-[#f8fafc] border-b border-[#dce2e8]">
-                  <div className="bg-white rounded-lg border border-slate-200/80 p-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                      รายการเบิกทั้งหมด (Advance Count)
-                    </div>
-                    <div className="text-lg font-bold font-mono text-[#073766] mt-0.5 tabular-nums">
-                      {fmtNum(filteredAdv.length)} <span className="text-xs font-sans font-medium text-slate-500">รายการ</span>
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-lg border border-slate-200/80 p-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                      ยอดเบิกเงินทดรองรวม (Total Advance)
-                    </div>
-                    <div className="text-lg font-bold font-mono text-[#102238] mt-0.5 tabular-nums">
-                      ฿{sumAdvance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-lg border border-slate-200/80 p-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                      ยอดเคลียร์ค่าใช้จ่ายรวม (Total Clear)
-                    </div>
-                    <div className="text-lg font-bold font-mono text-[#0d7a5f] mt-0.5 tabular-nums">
-                      ฿{sumCleared.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-lg border border-slate-200/80 p-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                      ส่วนต่างสุทธิ (Net DIFF: Advance - Clear)
-                    </div>
-                    <div className={`text-lg font-bold font-mono mt-0.5 tabular-nums ${sumDiff >= 0 ? "text-[#0284c7]" : "text-[#c9252d]"}`}>
-                      ฿{sumDiff.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                  </div>
-                </div>
-
                 <div className="p-4 border-b border-[#dce2e8] flex flex-wrap items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="relative w-full sm:w-[290px]">
